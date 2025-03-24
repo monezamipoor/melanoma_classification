@@ -1,0 +1,8 @@
+wandb
+pyyaml
+torch
+torchvision
+timm
+tqdm
+numpy
+Pillow
