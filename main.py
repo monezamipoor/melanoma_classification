@@ -14,6 +14,7 @@ from datetime import datetime
 class MelanomaTrainer:
     def __init__(self, opt):
         self.opt = opt
+        print(opt)
         self.device = torch.device('cuda' if opt['training']['cuda'] and torch.cuda.is_available() else 'cpu')
         self.train_loader, self.val_loader = melanoma_dataloaders(opt)
         self.model = melanoma_model(opt).to(self.device)
