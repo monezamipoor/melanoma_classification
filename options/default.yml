@@ -1,0 +1,53 @@
+# Dataset Arguments
+dataset:
+  image_size: [224, 224]  # Width, Height of input images
+  augmentations:
+    horizontal_flip: 0.5
+    vertical_flip: 0.3
+    random_rotation: 15  # degrees
+    color_jitter: 0.2  # brightness, contrast, saturation
+  oversampling_rate: 1.5  # For imbalanced datasets
+  stratified_batching: true  # For maintaining class distribution in batches
+  dataset_train_path: "./data/train"
+  dataset_train_path: "./data/validation"
+  batch_size: 32
+  # dataset_train_path: "./data/test"
+  # k_fold_validation: 5 # Options: k, none
+  # test: false # Include test dataset as well or only train and validation
+  # add_metadata: false # adding or removing metadata
+
+# Model Arguments
+model:
+  backbone: "resnet50"  # Options: resnet18, resnet50, efficientnet_b0, vit_base
+  pretrained: true
+  output_neurons: 10  # Number of classes
+  focal_loss_gamma: 2.0  # Focusing parameter for focal loss
+  dropout_rate: 0.3
+
+# Training Arguments
+training:
+  optimizer: "adam"  # Options: adam, sgd, adamw
+  learning_rate: 0.001
+  scheduler: "cosine"  # Options: cosine, step, reduce_on_plateau
+  decay_rate: 0.1  # For step scheduler
+  step_size: 30  # Epochs between decay for step scheduler
+  cuda: true
+  epochs: 100
+  warmup_epochs: 5
+  freeze_pretrained: true  # Whether to freeze backbone layers
+  mixed_precision: true  # Whether to use mixed precision training
+  gradient_clipping: 1.0
+
+# Testing and Logging Arguments
+testing:
+  log_dir: "./logs"
+  model_save_strategy: "best"  # Options: all, best, last, none
+  model_save_metric: ['mAP','recall']
+  checkpoint_dir: "./checkpoints"
+  wandb:
+    project_name: "my_pytorch_project"
+    entity: "your_username"
+    api_key: "YOUR_WANDB_API_KEY"  # Replace with your actual key
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
