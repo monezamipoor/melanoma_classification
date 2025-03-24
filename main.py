@@ -56,21 +56,34 @@ class MelanomaTrainer:
         if save_strategy == 'none':
             return
         timestamp = datetime.now().isoformat(timespec='minutes')
+        checkpoint_dir = self.opt['testing']['checkpoint_dir']
+        os.makedirs(checkpoint_dir, exist_ok=True)
 
         if save_strategy == 'best':
             for metric in self.opt['testing']['model_save_metric']:
                 if metrics[metric] > self.best_metrics[metric]:
                     self.best_metrics[metric] = metrics[metric]
-                    save_path = os.path.join(self.opt['testing']['checkpoint_dir'], f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth")
+                    save_path = os.path.join(
+                        checkpoint_dir,
+                        f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth"
+                    )
                     torch.save(self.model.state_dict(), save_path)
                     print(f"Saved best model for {metric} at epoch {epoch+1}")
+
         elif save_strategy == 'last':
-            save_path = os.path.join(self.opt['testing']['checkpoint_dir'], f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_last.pth")
+            save_path = os.path.join(
+                checkpoint_dir,
+                f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_last.pth"
+            )
             torch.save(self.model.state_dict(), save_path)
             print(f"Saved last model at epoch {epoch+1}")
+
         elif save_strategy == 'all':
             for metric in self.opt['testing']['model_save_metric']:
-                save_path = os.path.join(self.opt['testing']['checkpoint_dir'], f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth")
+                save_path = os.path.join(
+                    checkpoint_dir,
+                    f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth"
+                )
                 torch.save(self.model.state_dict(), save_path)
                 print(f"Saved model for {metric} at epoch {epoch+1}")
 
