@@ -23,7 +23,7 @@ class MelanomaDataset(Dataset):
 
     def build_transforms(self):
         if self.mode == "train":
-            transforms = transforms.Compose([
+            melanoma_transform = transforms.Compose([
                 transforms.Resize(self.opt['dataset']['image_size']),
                 # Add your augmentations here based on opt
                 # Example:
@@ -34,13 +34,13 @@ class MelanomaDataset(Dataset):
             ])
         
         if self.mode == "val":
-            transforms = transforms.Compose([
+            melanoma_transform = transforms.Compose([
                 transforms.Resize(self.opt['dataset']['image_size']),
                 transforms.ToTensor(),
                 transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
             ])
     
-        return transforms
+        return melanoma_transform
 
 def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
     # If use_stratified, use some positive samples in each batch
