@@ -154,7 +154,7 @@ class MelanomaTrainer:
 
 def argument_parser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("-o", "--opt", type=str, default="./options/default.yml", help="the option file")
+    parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
     args = parser.parse_args()
     if not os.path.isabs(args.opt) and not args.opt.startswith('./'):
         args.opt = os.path.join("./options", args.opt)
