@@ -1,12 +1,7 @@
 from datetime import datetime
+import torch
 import os
 
-def evaluate_metrics(opt, all_outputs, all_labels):
-    # Skeleton function for evaluating metrics based on predictions and ground truths
-    # Implement evaluation logic here using libraries like sklearn or torchmetrics
-    # metrics is a dictionary like {'mAP' : 0.5, 'recall' : 0.9}
-    metrics = {}
-    return metrics
 
 def log_results(opt, metrics):
     # Define log directory and filename
@@ -24,3 +19,20 @@ def log_results(opt, metrics):
         # Append metrics for each epoch
         f.write(str(metrics.get('epoch', 'N/A')) + "\t" + "\t".join([str(v) for v in metrics.values()]) + "\n")
     print(f"Metrics logged to {log_filename}")
+
+# Determine cuda and use this as a way to configure any device params
+# opt is passed but not currently used
+def cuda_available(opt):
+    # GPU operations have a separate seed we also want to set
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(42)
+
+    # Additionally, some operations on a GPU are implemented stochastic for efficiency
+    # We want to ensure that all operations are deterministic on GPU (if used) for reproducibility
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
+
+    device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+    print("Device", device)
+
+    return device

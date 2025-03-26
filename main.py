@@ -4,18 +4,21 @@ import yaml
 import os
 import torch
 import torch.cuda.amp as amp
+from timm.utils import AverageMeter
 from torch import nn, optim
 from tqdm import tqdm
 from data import melanoma_dataloaders
 from model import melanoma_model, melanoma_loss
-from utils import evaluate_metrics, log_results
+from utils import log_results, cuda_available
+from metrics import evaluate_metrics
 from datetime import datetime
+import torch.nn.functional as F
 
 class MelanomaTrainer:
     def __init__(self, opt):
         self.opt = opt
         print(opt)
-        self.device = torch.device('cuda' if opt['training']['cuda'] and torch.cuda.is_available() else 'cpu')
+        self.device = cuda_available(self.opt)
         self.train_loader, self.val_loader = melanoma_dataloaders(opt)
         self.model = melanoma_model(opt).to(self.device)
         self.criterion = melanoma_loss(opt)
@@ -25,7 +28,9 @@ class MelanomaTrainer:
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metric']}
 
         if opt['training']['freeze_pretrained']:
-            self.freeze_backbone()
+            self.freeze_backbone(bool(opt['training']['freeze_pretrained']))
+        else:
+            self.freeze_backbone(False)
 
         if opt['testing']['wandb']['project_name']:
             wandb.init(project=opt['testing']['wandb']['project_name'], entity=opt['testing']['wandb']['entity'])
@@ -47,10 +52,10 @@ class MelanomaTrainer:
         elif self.opt['training']['scheduler'] == 'reduce_on_plateau':
             return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1)
 
-    def freeze_backbone(self):
+    def freeze_backbone(self, freeze=False):
         for param in list(self.model.parameters())[:-1]:
-            param.requires_grad = False
-        print("Backbone layers frozen.")
+            param.requires_grad = freeze
+        print("Backbone layers frozen.= " + str(freeze))
 
     def save_checkpoint(self, epoch, metrics):
         save_strategy = self.opt['testing']['model_save_strategy']
@@ -91,15 +96,18 @@ class MelanomaTrainer:
     def train(self):
         print("Starting Training")
         for epoch in range(self.opt['training']['epochs']):
+            self.model = self.model.to(self.device)
             self.model.train()
             total_loss = 0
 
             loop = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.opt['training']['epochs']}")
+
             for images, labels in loop:
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 self.optimizer.zero_grad()
 
+                #TODO mixed precision is not tested
                 if self.opt['training']['mixed_precision']:
                     with amp.autocast():
                         outputs = self.model(images)
@@ -109,7 +117,7 @@ class MelanomaTrainer:
                     self.scaler.update()
                 else:
                     outputs = self.model(images)
-                    loss = self.criterion(outputs, labels)
+                    loss = self.criterion(outputs.squeeze(1), labels.float())       # Need to squeeze [BS, 1] to [BS] and BCE uses float
                     loss.backward()
                     self.optimizer.step()
 
@@ -120,7 +128,7 @@ class MelanomaTrainer:
                 loop.set_postfix(loss=loss.item())
 
             avg_loss = total_loss / len(self.train_loader)
-            val_loss, val_metrics = self.validate()
+            val_loss, val_metrics = self.validate()             #TODO Would this be better extracted outside of the train method?
             self.scheduler.step(val_loss if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
             print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
@@ -128,28 +136,36 @@ class MelanomaTrainer:
             if self.opt['testing']['wandb']['project_name']:
                 wandb.log({"Train Loss": avg_loss, "Validation Loss": val_loss, **val_metrics})
 
+            #TODO with metrics implementation
             self.save_checkpoint(epoch, val_metrics)
 
     def validate(self):
+        self.model = self.model.to(self.device)
         self.model.eval()
         total_loss = 0
-        all_outputs = []
-        all_labels = []
 
         with torch.no_grad():
             loop = tqdm(self.val_loader, desc="Validating")
+
+            firstitr = True
+
             for images, labels in loop:
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
+                loss = self.criterion(outputs.squeeze(), labels.float())
                 total_loss += loss.item()
 
-                all_outputs.append(outputs.cpu())
-                all_labels.append(labels.cpu())
+                if firstitr:
+                    all_outputs = outputs.cpu()
+                    all_labels = labels.cpu()
+                    firstitr = False
+                else:
+                    all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
+                    all_labels = torch.cat((all_labels, labels.cpu()), dim=0)
 
         avg_loss = total_loss / len(self.val_loader)
-        metrics = evaluate_metrics(self.opt, all_outputs, all_labels)
+        metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels)
         log_results(self.opt, metrics)
         return avg_loss, metrics
 
