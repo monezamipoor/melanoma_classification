@@ -1,3 +1,7 @@
 wandb
 timm
 tqdm
+pandas
+numpy
+scikit-learn
+torchmetrics

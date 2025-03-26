@@ -5,21 +5,41 @@ import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 from PIL import Image
 import numpy as np
+import pandas as pd
+from sklearn.model_selection import train_test_split
+import time
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, data_path, mode='train'):
+    def __init__(self, opt, mode, root, files, classes, transforms=None):
+
+        # Set opt locally
         self.opt = opt
-        self.data_path = data_path
+        # Are we train, val or test?
         self.mode = mode
-        self.transforms = self.build_transforms()
-        
+        # location of the dataset
+        self.root = root
+        # list of files
+        self.files = files
+        # list of classes
+        self.classes = classes
+        # transforms
+        self.transforms = self.build_transforms()              #TODO Transformations
+
+    def __getitem__(self, item):
+        # read the image
+        image = Image.open(os.path.join(self.root, self.files[item])).convert(mode="RGB")
+        # class for that image
+        class_ = self.classes[item]
+        # apply transformation
+        if self.transforms:
+            image = self.transforms(image)
+
+        # return the image and class
+        return image, class_
+
     def __len__(self):
-        # Return the size of the dataset
-        pass
-        
-    def __getitem__(self, idx):
-        # Return a sample from the dataset
-        pass
+        # return the total number of images
+        return len(self.files)
 
     def build_transforms(self):
         if self.mode == "train":
@@ -42,6 +62,7 @@ class MelanomaDataset(Dataset):
     
         return melanoma_transform
 
+# TODO this needs implementing properly and testing?
 def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
@@ -49,26 +70,42 @@ def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
     return WeightedRandomSampler()
 
 def melanoma_dataloaders(opt):
-    
+
+    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+
+    files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
+    classes = dataset['target'].values                  # Target classes (0 = benign, 1 = malignant)
+
+    # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
+    train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
+                                                                            test_size=0.2, stratify=classes)
+
+    #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
         opt,
-        mode='train',
-        data_path=opt['dataset']['dataset_train_path'],
+        'train',
+        opt['dataset']['dataset_train_path'], train_files, train_classes,
+        transforms=None             #TODO Could drop this if transforms are being handled via config.
     )
     
     val_dataset = MelanomaDataset(
         opt,
-        mode='val',
-        data_path=opt['dataset']['dataset_val_path'],
+        'val',
+        opt['dataset']['dataset_val_path'], val_files, val_classes,
+        transforms=None             #TODO Could drop this if transforms are being handled via config.
     )
 
     train_sampler = None
+
+    #TODO Configure sampler, straified batching and k-fold.
+    '''
     if opt['dataset'].get('oversampling_rate', 1.0) > 1.0 or opt['dataset'].get('stratified_batching', False):
         train_sampler = get_sampler(
             train_dataset,
             oversampling_rate=opt['dataset'].get('oversampling_rate', 1.0),
             use_stratified=opt['dataset'].get('stratified_batching', False)
         )
+    '''
     
     # Create dataloaders
     train_loader = DataLoader(
