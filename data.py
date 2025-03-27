@@ -89,7 +89,11 @@ def up_sampling(files, classes, aug=False):
     oversampling_class_1 = class_1_files * (majority_count // minority_count) # multiply the amount of diffenernce 
     remainder = majority_count % minority_count # Because we round the difference it has the possibility that wont the two class be exactly in the same amount so we calculate the remainder 
     oversampling_class_1 += class_1_files[:remainder] 
-    
+
+    # Combine class 0 and oversampled class 1
+    new_files = class_0_files + oversampling_class_1
+    new_classes = [0] * len(class_0_files) + [1] * len(oversampling_class_1)
+    return new_files, new_classes    
 
 
 def melanoma_dataloaders(opt):
