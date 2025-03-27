@@ -9,10 +9,10 @@ dataset:
 
   #oversampling_rate: 1.5  # For imbalanced datasets
   #stratified_batching: true  # For maintaining class distribution in batches
-  dataset_train_path: 'C:\University Stuffs\Surrey\Feb 25 Semester\AML\Project\Git Folder\melanoma_classification\train'
-  dataset_train_csv: 'C:\University Stuffs\Surrey\Feb 25 Semester\AML\Project\Git Folder\melanoma_classification\train.csv'
-  dataset_val_path: 'C:\University Stuffs\Surrey\Feb 25 Semester\AML\Project\Git Folder\melanoma_classification\train'
-  dataset_test_path: 'C:\University Stuffs\Surrey\Feb 25 Semester\AML\Project\Git Folder\melanoma_classification\test'
+  dataset_train_path: "/content/Melanoma/train"
+  dataset_train_csv: "/content/Melanoma/train.csv"
+  dataset_val_path: "/content/Melanoma/train"
+  dataset_test_path: "/content/Melanoma/test"
   batch_size: 16
   # dataset_train_path: "./data/test"
   # k_fold_validation: 5 # Options: k, none
