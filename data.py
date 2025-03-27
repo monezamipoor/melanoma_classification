@@ -69,6 +69,29 @@ def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
     # Create and return sampler uisng params
     return WeightedRandomSampler()
 
+def up_sampling(files, classes, aug=False):
+    
+    files = list(files)
+    classes = list(classes)
+    
+    # Separate class 0 and class 1 samples
+    class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
+    class_1_files = [file_name for file_name, label in zip(files, classes) if label == 1]
+    
+    count_dict = dict(zip(unique, counts))
+    majority_count = max(count_dict.values())
+
+    # # Get majority count (class 0 count), we know class 1 have 584 and class 0 have 32542 its just for ourself to be completle sure and compare it with after up sampling.
+    majority_count = len(class_0_files)
+    minority_count = len(class_1_files)
+
+    # Duplicate class 1 files to match class 0 count
+    oversampling_class_1 = class_1_files * (majority_count // minority_count) # multiply the amount of diffenernce 
+    remainder = majority_count % minority_count # Because we round the difference it has the possibility that wont the two class be exactly in the same amount so we calculate the remainder 
+    oversampling_class_1 += class_1_files[:remainder] 
+    
+
+
 def melanoma_dataloaders(opt):
 
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
