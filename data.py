@@ -21,7 +21,7 @@ def vertical_half_mix(img1, img2):
     mixed.paste(bottom_half, (0, h // 2))
     return mixed
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.5):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.4):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
