@@ -6,6 +6,8 @@ dataset:
     vertical_flip: 0.3
     random_rotation: 15 # degrees
     color_jitter: 0.2 # brightness, contrast, saturation
+    image_mix_enabled: true       # Toggle the new augmentation on or off
+    image_mix_prob: 0.3       
 
   #oversampling_rate: 1.5  # For imbalanced datasets
   #stratified_batching: true  # For maintaining class distribution in batches
