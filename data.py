@@ -9,58 +9,127 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
 
-class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None):
+# class MelanomaDataset(Dataset):
+#     def __init__(self, opt, mode, root, files, classes, transforms=None):
 
-        # Set opt locally
+#         # Set opt locally
+#         self.opt = opt
+#         # Are we train, val or test?
+#         self.mode = mode
+#         # location of the dataset
+#         self.root = root
+#         # list of files
+#         self.files = files
+#         # list of classes
+#         self.classes = classes
+#         # transforms
+#         self.transforms = self.build_transforms()              #TODO Transformations
+
+#     def __getitem__(self, item):
+#         # read the image
+#         image = Image.open(os.path.join(self.root, self.files[item])).convert(mode="RGB")
+#         # class for that image
+#         class_ = self.classes[item]
+#         # apply transformation
+#         if self.transforms:
+#             image = self.transforms(image)
+
+#         # return the image and class
+#         return image, class_
+
+#     def __len__(self):
+#         # return the total number of images
+#         return len(self.files)
+
+class MelanomaDataset(Dataset):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.1):
+        """
+        subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
+        """
         self.opt = opt
-        # Are we train, val or test?
         self.mode = mode
-        # location of the dataset
         self.root = root
-        # list of files
-        self.files = files
-        # list of classes
-        self.classes = classes
-        # transforms
-        self.transforms = self.build_transforms()              #TODO Transformations
+        
+        # Optionally use only a fraction of the files and classes
+        if subset < 1.0:
+            num_samples = int(len(files) * subset)
+            self.files = files[:num_samples]
+            self.classes = classes[:num_samples]
+        else:
+            self.files = files
+            self.classes = classes
+
+        # Build transforms (could be conditional based on self.mode)
+        self.transforms = self.build_transforms() if transforms is None else transforms
 
     def __getitem__(self, item):
-        # read the image
-        image = Image.open(os.path.join(self.root, self.files[item])).convert(mode="RGB")
-        # class for that image
+        image = Image.open(os.path.join(self.root, self.files[item])).convert("RGB")
         class_ = self.classes[item]
-        # apply transformation
         if self.transforms:
             image = self.transforms(image)
-
-        # return the image and class
         return image, class_
 
     def __len__(self):
-        # return the total number of images
         return len(self.files)
 
-    def build_transforms(self):
-        if self.mode == "train":
-            melanoma_transform = transforms.Compose([
-                transforms.Resize(self.opt['dataset']['image_size']),
-                # Add your augmentations here based on opt
-                # Example:
-                # if opt['dataset']['augmentations']['horizontal_flip'] > 0:
-                #     transforms.RandomHorizontalFlip(p=opt['dataset']['augmentations']['horizontal_flip']),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
+    # def build_transforms(self):
+    #     if self.mode == "train":
+    #         melanoma_transform = transforms.Compose([
+    #             transforms.Resize(self.opt['dataset']['image_size']),
+    #             # Add your augmentations here based on opt
+    #             # Example:
+    #             # if opt['dataset']['augmentations']['horizontal_flip'] > 0:
+    #             #     transforms.RandomHorizontalFlip(p=opt['dataset']['augmentations']['horizontal_flip']),
+    #             transforms.ToTensor(),
+    #             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    #         ])
         
-        if self.mode == "val":
-            melanoma_transform = transforms.Compose([
-                transforms.Resize(self.opt['dataset']['image_size']),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
+    #     if self.mode == "val":
+    #         melanoma_transform = transforms.Compose([
+    #             transforms.Resize(self.opt['dataset']['image_size']),
+    #             transforms.ToTensor(),
+    #             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    #         ])
     
+    #     return melanoma_transform
+
+
+
+    def build_transforms(self):
+        # Always start with resizing based on the desired image size
+        base_transforms = [transforms.Resize(self.opt['dataset']['image_size'])]
+        
+        # Build the training augmentation pipeline
+        if self.mode == "train":
+            aug = self.opt['dataset'].get('augmentations', {})
+            # Add horizontal flip if enabled (p > 0)
+            if aug.get('horizontal_flip', 0) > 0:
+                base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
+            # Add vertical flip if enabled
+            if aug.get('vertical_flip', 0) > 0:
+                base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
+            # Add random rotation if specified (degrees > 0)
+            if aug.get('random_rotation', 0) > 0:
+                base_transforms.append(transforms.RandomRotation(degrees=aug['random_rotation']))
+            # Add color jitter if specified (non-zero value for brightness/contrast/saturation)
+            if aug.get('color_jitter', 0) > 0:
+                cj_value = aug['color_jitter']
+                base_transforms.append(transforms.ColorJitter(
+                    brightness=cj_value,
+                    contrast=cj_value,
+                    saturation=cj_value
+                ))
+        
+        # Append the common transforms for both train and validation
+        base_transforms.extend([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                [0.229, 0.224, 0.225])
+        ])
+        
+        melanoma_transform = transforms.Compose(base_transforms)
         return melanoma_transform
+   
 
 # TODO this needs implementing properly and testing?
 def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
