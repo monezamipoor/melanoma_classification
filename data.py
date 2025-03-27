@@ -8,41 +8,20 @@ import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
+import random
 
-# class MelanomaDataset(Dataset):
-#     def __init__(self, opt, mode, root, files, classes, transforms=None):
 
-#         # Set opt locally
-#         self.opt = opt
-#         # Are we train, val or test?
-#         self.mode = mode
-#         # location of the dataset
-#         self.root = root
-#         # list of files
-#         self.files = files
-#         # list of classes
-#         self.classes = classes
-#         # transforms
-#         self.transforms = self.build_transforms()              #TODO Transformations
-
-#     def __getitem__(self, item):
-#         # read the image
-#         image = Image.open(os.path.join(self.root, self.files[item])).convert(mode="RGB")
-#         # class for that image
-#         class_ = self.classes[item]
-#         # apply transformation
-#         if self.transforms:
-#             image = self.transforms(image)
-
-#         # return the image and class
-#         return image, class_
-
-#     def __len__(self):
-#         # return the total number of images
-#         return len(self.files)
-
+def vertical_half_mix(img1, img2):
+    """Mix two images vertically: top half from img1, bottom half from img2."""
+    w, h = img1.size
+    mixed = Image.new("RGB", (w, h))
+    top_half = img1.crop((0, 0, w, h // 2))
+    bottom_half = img2.crop((0, h // 2, w, h))
+    mixed.paste(top_half, (0, 0))
+    mixed.paste(bottom_half, (0, h // 2))
+    return mixed
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.1):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.5):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
@@ -62,37 +41,31 @@ class MelanomaDataset(Dataset):
         # Build transforms (could be conditional based on self.mode)
         self.transforms = self.build_transforms() if transforms is None else transforms
 
+        # Get mixing augmentation options from config
+        aug = self.opt['dataset'].get('augmentations', {})
+        self.mix_enabled = aug.get('image_mix_enabled', False)
+        self.mix_prob = aug.get('image_mix_prob', 1.0)  # default to 100% if enabled
+
     def __getitem__(self, item):
         image = Image.open(os.path.join(self.root, self.files[item])).convert("RGB")
         class_ = self.classes[item]
+
+        # Optionally apply the mixed augmentation on training data only
+        if self.mode == "train" and self.mix_enabled:
+            if random.random() < self.mix_prob:
+                # Select a random image to mix with
+                rand_index = random.randint(0, len(self.files) - 1)
+                image2 = Image.open(os.path.join(self.root, self.files[rand_index])).convert("RGB")
+                # Apply the mixing augmentation (vertical half mix)
+                image = vertical_half_mix(image, image2)
+
+        # Apply the defined transformations (resize, flips, etc.)
         if self.transforms:
             image = self.transforms(image)
         return image, class_
 
     def __len__(self):
         return len(self.files)
-
-    # def build_transforms(self):
-    #     if self.mode == "train":
-    #         melanoma_transform = transforms.Compose([
-    #             transforms.Resize(self.opt['dataset']['image_size']),
-    #             # Add your augmentations here based on opt
-    #             # Example:
-    #             # if opt['dataset']['augmentations']['horizontal_flip'] > 0:
-    #             #     transforms.RandomHorizontalFlip(p=opt['dataset']['augmentations']['horizontal_flip']),
-    #             transforms.ToTensor(),
-    #             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    #         ])
-        
-    #     if self.mode == "val":
-    #         melanoma_transform = transforms.Compose([
-    #             transforms.Resize(self.opt['dataset']['image_size']),
-    #             transforms.ToTensor(),
-    #             transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-    #         ])
-    
-    #     return melanoma_transform
-
 
 
     def build_transforms(self):
