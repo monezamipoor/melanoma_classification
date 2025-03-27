@@ -1,8 +1,13 @@
 import torch
 import torchmetrics
-from torchmetrics.functional.classification import binary_auroc
+from torchmetrics.functional.classification import (
+    binary_precision,
+    binary_recall,
+    binary_f1_score,
+    binary_auroc
+)
 
-def evaluate_metrics(opt, all_outputs, all_labels):
+def evaluate_metrics(opt, all_outputs, all_labels, metric):
     # Skeleton function for evaluating metrics based on predictions and ground truths
     # Implement evaluation logic here using libraries like sklearn or torchmetrics
     # metrics is a dictionary like {'mAP' : 0.5, 'recall' : 0.9}
