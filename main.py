@@ -153,7 +153,9 @@ class MelanomaTrainer:
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs.squeeze(), labels.float())
+                # loss = self.criterion(outputs.squeeze(), labels.float())
+                loss = self.criterion(outputs.view(-1), labels.view(-1).float())
+
                 total_loss += loss.item()
 
                 if firstitr:
