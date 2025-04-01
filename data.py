@@ -6,7 +6,7 @@ from torchvision.datasets import ImageFolder
 from PIL import Image
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GroupKFold
 import time
 
 class MelanomaDataset(Dataset):
@@ -63,7 +63,11 @@ class MelanomaDataset(Dataset):
         return melanoma_transform
 
 # TODO this needs implementing properly and testing?
-def stratified_sampler(classes):
+def stratified_sampler(opt):
+
+    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    classes = list(dataset['target'].values)
+    
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
     # Create and return sampler uisng params
@@ -89,10 +93,12 @@ def stratified_sampler(classes):
     
     return sampler
 
-def up_sampling(files, classes, aug=False, oversampling_rate=2):
+def up_sampling(opt, aug=False, oversampling_rate=2):
     
-    files = list(files)
-    classes = list(classes)
+    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    
+    files = list(dataset['image_name'].values + '.jpg')
+    classes = list(dataset['target'].values)
     
     # Separate class 0 and class 1 samples
     class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
@@ -127,9 +133,34 @@ def melanoma_dataloaders(opt):
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
     classes = dataset['target'].values                  # Target classes (0 = benign, 1 = malignant)
 
-    # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
-    train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
-                                                                            test_size=0.2, stratify=classes)
+    if opt['dataset'].get('use_groupkfold', False):
+
+        # Splitting the train and test datasets
+        test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
+        train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+
+        train_files = train_dataset['image_name'].values + '.jpg'
+        train_classes = train_dataset['target'].values
+        
+        # we will use tfrecord column to grouping the datas and fed it to GroupKFold
+        all_groups = train_dataset['tfrecord'].values  
+        
+        # We will use 3 fold 
+        n_splits = opt['dataset'].get('n_splits', 3)  
+        GroupKFold = GroupKFold(n_splits=n_splits)
+        
+        # For simplicity we take the first fold here.
+        train_idx, val_idx = next(GroupKFold.split(train_files, train_classes, groups=all_groups))
+        
+        train_files = train_files[train_idx]
+        val_files = train_files[val_idx]
+        train_classes = train_classes[train_idx]
+        val_classes = train_classes[val_idx]
+        
+    else:
+        # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
+        train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
+                                                                                test_size=0.2, stratify=classes)
 
     #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
