@@ -2,21 +2,22 @@
 dataset:
   image_size: [224, 224] # Width, Height of input images
   augmentations:
-    horizontal_flip: 0.5
-    vertical_flip: 0.3
-    random_rotation: 15 # degrees
+    horizontal_flip: 0.4
+    vertical_flip: 0.2
+    random_rotation: 10 # degrees
     color_jitter: 0.2 # brightness, contrast, saturation
-    image_mix_enabled: true       # Toggle the new augmentation on or off
-    image_mix_prob: 0.3       
+    image_mix_enabled: True
+    image_mix_type: column   # Use "column" to activate ColumnMixTransform.
+    image_mix_prob: 0.3   
+    random_shear: 10 
+    shift_vertical: [0.1, 0.1]
 
   #oversampling_rate: 1.5  # For imbalanced datasets
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
-<<<<<<< HEAD
-  dataset_train_csv: "/content/Melanoma/train.csv"
-=======
+
   dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/train-small.csv"
->>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
+
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/test"
   batch_size: 16
@@ -27,7 +28,7 @@ dataset:
 
 # Model Arguments
 model:
-  backbone: "resnet18" # Options: resnet18, resnet50, efficientnet_b0, vit_base
+  backbone: "resnet50" # Options: resnet18, resnet50, efficientnet_b0, vit_base
   pretrained: true
   output_neurons: 1 # Number of classes
   #focal_loss_gamma: 2.0  # Focusing parameter for focal loss
@@ -37,16 +38,14 @@ model:
 
 # Training Arguments
 training:
-  optimizer: "adagrad" # Options: adam, sgd, adamw, adagrad
+  optimizer: "amsgrad" # Options: adam, sgd, adamw, adagrad, amsgrad
   learning_rate: 0.001
   scheduler: "cosine" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
-<<<<<<< HEAD
-  epochs: 5
-=======
+
   epochs: 35
->>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
+
   warmup_epochs: 5
   freeze_pretrained: true # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
@@ -56,11 +55,8 @@ training:
 testing:
   log_dir: "./logs"
   model_save_strategy: "best" # Options: all, best, last, none
-<<<<<<< HEAD
-  model_save_metric: ["AUC"]
-=======
+
   model_save_metric: ["AUC","Accuracy","F1 Score"]
->>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
   checkpoint_dir: "./checkpoints"
   wandb:
     project_name: # yourproject

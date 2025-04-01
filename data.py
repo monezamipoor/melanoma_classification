@@ -10,18 +10,51 @@ from sklearn.model_selection import train_test_split
 import time
 import random
 
+from torchvision.transforms.functional import InterpolationMode
 
-def vertical_half_mix(img1, img2):
-    """Mix two images vertically: top half from img1, bottom half from img2."""
+
+def column_mix(img1, img2, img3, img4):
+
     w, h = img1.size
+    
     mixed = Image.new("RGB", (w, h))
-    top_half = img1.crop((0, 0, w, h // 2))
-    bottom_half = img2.crop((0, h // 2, w, h))
-    mixed.paste(top_half, (0, 0))
-    mixed.paste(bottom_half, (0, h // 2))
+
+    strip_width = w // 4
+
+    col1 = img1.crop((0, 0, strip_width, h))
+    col2 = img2.crop((strip_width, 0, 2 * strip_width, h))
+    col3 = img3.crop((2 * strip_width, 0, 3 * strip_width, h))
+    col4 = img4.crop((3 * strip_width, 0, w, h))
+
+    mixed.paste(col1, (0, 0))
+    mixed.paste(col2, (strip_width, 0))
+    mixed.paste(col3, (2 * strip_width, 0))
+    mixed.paste(col4, (3 * strip_width, 0))
+    
     return mixed
+
+class QuadrantMixTransform:
+
+    def __init__(self, mix_prob, root, files):
+        self.mix_prob = mix_prob
+        self.root = root
+        self.files = files 
+
+    def __call__(self, img):
+        # With probability mix_prob, perform quadrant mix.
+        if random.random() < self.mix_prob and len(self.files) >= 4:
+            # Randomly sample four indices (without replacement).
+            indices = random.sample(range(len(self.files)), 4)
+            target_size = img.size
+            img1 = Image.open(os.path.join(self.root, self.files[indices[0]])).convert("RGB").resize(target_size)
+            img2 = Image.open(os.path.join(self.root, self.files[indices[1]])).convert("RGB").resize(target_size)
+            img3 = Image.open(os.path.join(self.root, self.files[indices[2]])).convert("RGB").resize(target_size)
+            img4 = Image.open(os.path.join(self.root, self.files[indices[3]])).convert("RGB").resize(target_size)
+            return column_mix(img1, img2, img3, img4)
+        return img
+
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.4):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=1.0):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
@@ -41,25 +74,11 @@ class MelanomaDataset(Dataset):
         # Build transforms (could be conditional based on self.mode)
         self.transforms = self.build_transforms() if transforms is None else transforms
 
-        # Get mixing augmentation options from config
-        aug = self.opt['dataset'].get('augmentations', {})
-        self.mix_enabled = aug.get('image_mix_enabled', False)
-        self.mix_prob = aug.get('image_mix_prob', 1.0)  # default to 100% if enabled
 
     def __getitem__(self, item):
         image = Image.open(os.path.join(self.root, self.files[item])).convert("RGB")
         class_ = self.classes[item]
 
-        # Optionally apply the mixed augmentation on training data only
-        if self.mode == "train" and self.mix_enabled:
-            if random.random() < self.mix_prob:
-                # Select a random image to mix with
-                rand_index = random.randint(0, len(self.files) - 1)
-                image2 = Image.open(os.path.join(self.root, self.files[rand_index])).convert("RGB")
-                # Apply the mixing augmentation (vertical half mix)
-                image = vertical_half_mix(image, image2)
-
-        # Apply the defined transformations (resize, flips, etc.)
         if self.transforms:
             image = self.transforms(image)
         return image, class_
@@ -75,16 +94,27 @@ class MelanomaDataset(Dataset):
         # Build the training augmentation pipeline
         if self.mode == "train":
             aug = self.opt['dataset'].get('augmentations', {})
-            # Add horizontal flip if enabled (p > 0)
+            # Horizontal flip
             if aug.get('horizontal_flip', 0) > 0:
                 base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
-            # Add vertical flip if enabled
+            # Vertical flip
             if aug.get('vertical_flip', 0) > 0:
                 base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
-            # Add random rotation if specified (degrees > 0)
+            # Random rotation
             if aug.get('random_rotation', 0) > 0:
-                base_transforms.append(transforms.RandomRotation(degrees=aug['random_rotation']))
-            # Add color jitter if specified (non-zero value for brightness/contrast/saturation)
+                base_transforms.append(transforms.RandomRotation(
+                    degrees=aug['random_rotation'],
+                    interpolation=InterpolationMode.NEAREST,
+                    fill=(255, 255, 255)  # fill empty areas with white instead of black
+                ))
+            if aug.get('random_shear', 0) > 0:
+                base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
+            if aug.get('shift_vertical', None) is not None:
+                vertical_shift = aug['shift_vertical'][1]
+
+                base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+
+            # Color jitter
             if aug.get('color_jitter', 0) > 0:
                 cj_value = aug['color_jitter']
                 base_transforms.append(transforms.ColorJitter(
@@ -92,16 +122,18 @@ class MelanomaDataset(Dataset):
                     contrast=cj_value,
                     saturation=cj_value
                 ))
+            # Add quadrant mixing if enabled
+            if aug.get('image_mix_enabled', False):
+                mix_prob = aug.get('image_mix_prob', 1.0)
+                base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
+
         
-        # Append the common transforms for both train and validation
         base_transforms.extend([
             transforms.ToTensor(),
             transforms.Normalize([0.485, 0.456, 0.406],
-                                [0.229, 0.224, 0.225])
+                                 [0.229, 0.224, 0.225])
         ])
-        
-        melanoma_transform = transforms.Compose(base_transforms)
-        return melanoma_transform
+        return transforms.Compose(base_transforms)
    
 
 # TODO this needs implementing properly and testing?
