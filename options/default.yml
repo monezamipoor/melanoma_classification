@@ -1,5 +1,7 @@
 # Dataset Arguments
 dataset:
+  use_groupkfold: true
+  n_splits: 5
   image_size: [224, 224]  # Width, Height of input images
   augmentations:
     horizontal_flip: 0.5
