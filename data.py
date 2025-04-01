@@ -137,11 +137,62 @@ class MelanomaDataset(Dataset):
    
 
 # TODO this needs implementing properly and testing?
-def get_sampler(dataset, oversampling_rate=1.0, use_stratified=False):
+def stratified_sampler(classes):
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
     # Create and return sampler uisng params
-    return WeightedRandomSampler()
+    
+    classes_arr = np.array(classes)
+    
+    # Get unique classes and their respective counts
+    unique_classes, counts = np.unique(classes_arr, return_counts=True)
+
+    # This will compute the weight for each class by counting the number of samples in each class
+    weights_per_class = 1.0 / counts 
+
+    # it will assign a weight to each sample based on its class
+    weights = weights_per_class[classes_arr]
+    weights = torch.tensor(sample_weights, dtype=torch.float32)
+    
+    # Create the WeightedRandomSampler. Replacement=True allows oversampling.
+    sampler = WeightedRandomSampler(
+        weights=weights,
+        num_samples=len(weights),
+        replacement=False
+    )
+    
+    return sampler
+
+def up_sampling(files, classes, aug=False, oversampling_rate=2):
+    
+    files = list(files)
+    classes = list(classes)
+    
+    # Separate class 0 and class 1 samples
+    class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
+    class_1_files = [file_name for file_name, label in zip(files, classes) if label == 1]
+
+    # Option 1 if we want to make the size of the both class exactly like each other 
+    # # Get majority count (class 0 count), we know class 1 have 584 and class 0 have 32542 its just for ourself to be completle sure and compare it with after up sampling.
+    # majority_count = len(class_0_files)
+    # minority_count = len(class_1_files)
+
+    ## Duplicate class 1 files to match class 0 count
+
+    # Option 1 if we want to make the size of the both class exactly like each other 
+    # oversampling_class_1 = class_1_files * (majority_count // minority_count) # multiply the amount of diffenernce 
+    # remainder = majority_count % minority_count # Because we round the difference it has the possibility that wont the two class be exactly in the same amount so we calculate the remainder 
+    # oversampling_class_1 += class_1_files[:remainder] 
+
+    # Option 2 multiply the minority class by an oversampling rate 
+    ## Duplicate class 1 files to match class 0 count
+    oversampling_class_1 = class_1_files * oversampling_rate 
+
+    # Combine class 0 and oversampled class 1
+    new_files = class_0_files + oversampling_class_1
+    new_classes = [0] * len(class_0_files) + [1] * len(oversampling_class_1)
+    return new_files, new_classes    
+
 
 def melanoma_dataloaders(opt):
 
