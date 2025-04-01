@@ -25,6 +25,10 @@ def evaluate_metrics(opt, preds, target):
     config_metrics = opt['testing']['model_save_metric']
     def to_scalar(x):
         return x.item() if isinstance(x, torch.Tensor) else x
+<<<<<<< HEAD
+=======
+
+>>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
     
     # Loop over each metric name and compute the corresponding metric.
     for metric in config_metrics:

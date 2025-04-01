@@ -43,6 +43,8 @@ class MelanomaTrainer:
             return optim.SGD(self.model.parameters(), lr=self.opt['training']['learning_rate'], momentum=0.9)
         elif self.opt['training']['optimizer'] == 'adamw':
             return optim.AdamW(self.model.parameters(), lr=self.opt['training']['learning_rate'])
+        elif self.opt['training']['optimizer'] == 'adagrad':
+            return optim.Adagrad(self.model.parameters(), lr=self.opt['training']['learning_rate'])
 
     def get_scheduler(self):
         if self.opt['training']['scheduler'] == 'cosine':

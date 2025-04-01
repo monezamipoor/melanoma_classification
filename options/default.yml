@@ -12,7 +12,11 @@ dataset:
   #oversampling_rate: 1.5  # For imbalanced datasets
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
+<<<<<<< HEAD
   dataset_train_csv: "/content/Melanoma/train.csv"
+=======
+  dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/train-small.csv"
+>>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/test"
   batch_size: 16
@@ -23,20 +27,26 @@ dataset:
 
 # Model Arguments
 model:
-  backbone: "resnet50" # Options: resnet18, resnet50, efficientnet_b0, vit_base
+  backbone: "resnet18" # Options: resnet18, resnet50, efficientnet_b0, vit_base
   pretrained: true
   output_neurons: 1 # Number of classes
   #focal_loss_gamma: 2.0  # Focusing parameter for focal loss
   dropout_rate: 0.3
+  freeze_backbone: true
+  num_frozen_layers: 3
 
 # Training Arguments
 training:
-  optimizer: "adamw" # Options: adam, sgd, adamw
+  optimizer: "adagrad" # Options: adam, sgd, adamw, adagrad
   learning_rate: 0.001
   scheduler: "cosine" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
+<<<<<<< HEAD
   epochs: 5
+=======
+  epochs: 35
+>>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
   warmup_epochs: 5
   freeze_pretrained: true # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
@@ -46,7 +56,11 @@ training:
 testing:
   log_dir: "./logs"
   model_save_strategy: "best" # Options: all, best, last, none
+<<<<<<< HEAD
   model_save_metric: ["AUC"]
+=======
+  model_save_metric: ["AUC","Accuracy","F1 Score"]
+>>>>>>> 9a3f620e (Update model(freezing and selection) and optimizer)
   checkpoint_dir: "./checkpoints"
   wandb:
     project_name: # yourproject
