@@ -5,3 +5,6 @@ pandas
 numpy
 scikit-learn
 torchmetrics
+matplotlib
+seaborn
+wandb

@@ -1,27 +1,10 @@
+import time
 from datetime import datetime
 import torch
 import os
+import pandas as pd
 
 EPOCH= 0
-
-
-# def log_results(opt, metrics):
-#     # Define log directory and filename
-#     log_dir = opt['testing']['log_dir']
-#     os.makedirs(log_dir, exist_ok=True)
-#     log_filename = os.path.join(log_dir, f"{datetime.now().strftime('%Y-%m-%d_%H-%M-%S')}_{os.path.basename(opt['opt']).replace('.yml', '')}.txt")
-
-#     # Write or append metrics to the log file
-#     if not os.path.exists(log_filename):
-#         with open(log_filename, 'w') as f:
-#             # Write header
-#             f.write("Epoch\t" + "\t".join(metrics.keys()) + "\n")
-
-#     with open(log_filename, 'a') as f:
-#         # Append metrics for each epoch
-#         f.write(str(metrics.get('epoch', 'N/A')) + "\t" + "\t".join([str(v) for v in metrics.values()]) + "\n")
-#     print(f"Metrics logged to {log_filename}")
-
 
 def get_log_filename(opt):
     # If the log filename hasn't been set yet, compute and store it in opt
@@ -76,3 +59,18 @@ def cuda_available(opt):
     print("Device", device)
 
     return device
+
+def log_model(opt, model):
+
+    layers = []
+    for name, param in model.named_parameters():
+        layers.append({"Layer Name": name, "Shape": list(param.size()), "Parameters": param.numel()})
+
+    log_dir = opt['testing']['log_dir']
+    os.makedirs(log_dir, exist_ok=True)
+
+    config_name = os.path.basename(opt['opt']).replace('.yml', '')
+    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_{time.strftime("%Y%m%d-%H%M%S")}.csv")
+
+    df = pd.DataFrame(layers)
+    df.to_csv(fileout, index=False)

@@ -4,27 +4,28 @@ import yaml
 import os
 import torch
 import torch.cuda.amp as amp
-from timm.utils import AverageMeter
-from torch import nn, optim
+from torch import optim
 from tqdm import tqdm
 from data import melanoma_dataloaders
 from model import melanoma_model, melanoma_loss
-from utils import log_results, cuda_available
+from utils import log_results, cuda_available, log_model
 from metrics import evaluate_metrics
 from datetime import datetime
-import torch.nn.functional as F
+from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log
+
 import numpy as np
 import matplotlib.pyplot as plt
 
 
 
-
+# TODO comments needed
 def denormalize_image(tensor, mean, std):
 
     for t, m, s in zip(tensor, mean, std):
         t.mul_(s).add_(m)
     return tensor
 
+# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
 
     # Ensure the save directory exists
@@ -59,15 +60,12 @@ def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDr
     
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-
     save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
     
     # Save the figure to the unique file path
     plt.savefig(save_path, bbox_inches='tight')
     plt.close(fig)
     print(f"Saved augmented samples to {save_path}")
-
-
 
 class MelanomaTrainer:
     def __init__(self, opt):
@@ -87,9 +85,8 @@ class MelanomaTrainer:
         else:
             self.freeze_backbone(False)
 
-        if opt['testing']['wandb']['project_name']:
-            wandb.init(project=opt['testing']['wandb']['project_name'], entity=opt['testing']['wandb']['entity'])
-            wandb.config.update(opt)
+        self.logwandb = wandb_login(opt)    # Track if we have an active wandb login
+        print("Wandb: ", self.logwandb)
 
     def get_optimizer(self):
         if self.opt['training']['optimizer'] == 'adam':
@@ -154,34 +151,20 @@ class MelanomaTrainer:
 
     def train(self):
         print("Starting Training")
+        wandb_watch(self.model, self.criterion, log_freq=10)
+
         for epoch in range(self.opt['training']['epochs']):
             self.model = self.model.to(self.device)
             self.model.train()
             total_loss = 0
 
             loop = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.opt['training']['epochs']}")
-            train_loader_p= self.train_loader
+
             #If you want to see the images after Aug
             # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
 
             for images, labels in loop:
-                images, labels = images.to(self.device), labels.to(self.device)
-
-                self.optimizer.zero_grad()
-
-                #TODO mixed precision is not tested
-                if self.opt['training']['mixed_precision']:
-                    with amp.autocast():
-                        outputs = self.model(images)
-                        loss = self.criterion(outputs, labels)
-                    self.scaler.scale(loss).backward()
-                    self.scaler.step(self.optimizer)
-                    self.scaler.update()
-                else:
-                    outputs = self.model(images)
-                    loss = self.criterion(outputs.squeeze(1), labels.float())       # Need to squeeze [BS, 1] to [BS] and BCE uses float
-                    loss.backward()
-                    self.optimizer.step()
+                loss = self.train_batch(images, labels)
 
                 if self.opt['training']['gradient_clipping']:
                     torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt['training']['gradient_clipping'])
@@ -189,17 +172,38 @@ class MelanomaTrainer:
                 total_loss += loss.item()
                 loop.set_postfix(loss=loss.item())
 
+
+            wandb_train_log(epoch+1, float(loss))
+
             avg_loss = total_loss / len(self.train_loader)
             val_loss, val_metrics = self.validate()             #TODO Would this be better extracted outside of the train method?
             self.scheduler.step(val_loss if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
             print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
 
-            if self.opt['testing']['wandb']['project_name']:
-                wandb.log({"Train Loss": avg_loss, "Validation Loss": val_loss, **val_metrics})
+            wandb_val_log(avg_loss, val_loss, **val_metrics)
 
             #TODO with metrics implementation
-            self.save_checkpoint(epoch, val_metrics)
+            self.save_checkpoint(epoch+1, val_metrics)
+
+    def train_batch(self, images, labels):
+        images, labels = images.to(self.device), labels.to(self.device)
+        self.optimizer.zero_grad()
+        # TODO mixed precision is not tested
+        if self.opt['training']['mixed_precision']:
+            with amp.autocast():
+                outputs = self.model(images)
+                loss = self.criterion(outputs, labels)
+            self.scaler.scale(loss).backward()
+            self.scaler.step(self.optimizer)
+            self.scaler.update()
+        else:
+            outputs = self.model(images)
+            loss = self.criterion(outputs.squeeze(1),
+                                  labels.float())  # Need to squeeze [BS, 1] to [BS] and BCE uses float
+            loss.backward()
+            self.optimizer.step()
+        return loss
 
     def validate(self):
         self.model = self.model.to(self.device)
@@ -246,7 +250,10 @@ def argument_parser():
 
 def main():
     opt = argument_parser()
+
     trainer = MelanomaTrainer(opt)
+    log_model(opt, trainer.model)           # Write a CSV of the model structure.
+
     trainer.train()
 
 if __name__ == "__main__":

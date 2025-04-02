@@ -34,7 +34,7 @@ def evaluate_metrics(opt, preds, target):
         elif metric_lower == 'precision':
             results['Precision'] = to_scalar(precision(preds, target, threshold=0.5))
         elif metric_lower == 'recall':
-            results['Recall'] = to_scalar(recall(preds, target, threshold=0.5))
+            results['Recall'] = to_scalar(recall(preds, target, threshold=0.5, task='binary'))
         elif metric_lower in ['f1', 'f1 score']:
             results['F1 Score'] = to_scalar(binary_f1_score(preds, target, threshold=0.5))
         elif metric_lower in ['average precision', 'ap']:
