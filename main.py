@@ -13,6 +13,61 @@ from utils import log_results, cuda_available
 from metrics import evaluate_metrics
 from datetime import datetime
 import torch.nn.functional as F
+import numpy as np
+import matplotlib.pyplot as plt
+
+
+
+
+def denormalize_image(tensor, mean, std):
+
+    for t, m, s in zip(tensor, mean, std):
+        t.mul_(s).add_(m)
+    return tensor
+
+def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
+
+    # Ensure the save directory exists
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+    
+    # Get one batch from the DataLoader. Assuming batch[0] contains the images.
+    batch = next(iter(loader))
+    images = batch[0]  # Shape: (B, C, H, W)
+    
+    # Define the normalization parameters used in your transforms:
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+
+    imgs_denorm = []
+    for i in range(num_samples):
+        img = images[i].clone().cpu()
+        img = denormalize_image(img, imagenet_mean, imagenet_std)
+        # Convert from (C, H, W) to (H, W, C)
+        img_np = img.permute(1, 2, 0).numpy()
+        # Clip values to [0, 1] for display purposes
+        img_np = np.clip(img_np, 0, 1)
+        imgs_denorm.append(img_np)
+    
+    # Create a grid plot for the samples
+    fig, axes = plt.subplots(1, num_samples, figsize=(20, 5))
+    for idx, ax in enumerate(axes):
+        ax.imshow(imgs_denorm[idx])
+        ax.set_title(f"Sample {idx+1}")
+        ax.axis("off")
+    plt.suptitle("Augmented Samples")
+    
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
+    save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+    
+    # Save the figure to the unique file path
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved augmented samples to {save_path}")
+
+
 
 class MelanomaTrainer:
     def __init__(self, opt):
@@ -43,6 +98,10 @@ class MelanomaTrainer:
             return optim.SGD(self.model.parameters(), lr=self.opt['training']['learning_rate'], momentum=0.9)
         elif self.opt['training']['optimizer'] == 'adamw':
             return optim.AdamW(self.model.parameters(), lr=self.opt['training']['learning_rate'])
+        elif self.opt['training']['optimizer'] == 'adagrad':
+            return optim.Adagrad(self.model.parameters(), lr=self.opt['training']['learning_rate'])
+        elif self.opt ['training']['optimizer'] == 'amsgrad':
+            return optim.Adam(self.model.parameters(), lr=self.opt['training']['learning_rate'], amsgrad=True)
 
     def get_scheduler(self):
         if self.opt['training']['scheduler'] == 'cosine':
@@ -101,6 +160,9 @@ class MelanomaTrainer:
             total_loss = 0
 
             loop = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.opt['training']['epochs']}")
+            train_loader_p= self.train_loader
+            #If you want to see the images after Aug
+            # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
 
             for images, labels in loop:
                 images, labels = images.to(self.device), labels.to(self.device)
@@ -153,7 +215,9 @@ class MelanomaTrainer:
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs.squeeze(), labels.float())
+                # loss = self.criterion(outputs.squeeze(), labels.float())
+                loss = self.criterion(outputs.view(-1), labels.view(-1).float())
+
                 total_loss += loss.item()
 
                 if firstitr:
