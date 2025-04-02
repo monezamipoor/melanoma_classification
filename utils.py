@@ -70,7 +70,7 @@ def log_model(opt, model):
     os.makedirs(log_dir, exist_ok=True)
 
     config_name = os.path.basename(opt['opt']).replace('.yml', '')
-    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_{time.strftime("%Y%m%d-%H%M%S")}.csv")
+    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_{time.strftime('%Y%m%d-%H%M%S')}.csv")
 
     df = pd.DataFrame(layers)
     df.to_csv(fileout, index=False)
