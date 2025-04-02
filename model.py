@@ -1,6 +1,7 @@
 import torch.nn as nn
 import timm
 from loss import FocalLoss
+from utils import check_nested_key
 
 class MelanomaModel(nn.Module):
     def __init__(self, opt):
@@ -84,9 +85,11 @@ def melanoma_model(opt):
 
 # Comment out the focal loss lines in config to default to BCE Loss
 def melanoma_loss(opt):
-    if opt['model']['focal_loss']['gamma'] > 0 and opt['model']['focal_loss']['alpha'] > 0:
-        print("Using Focal Loss")
-        return FocalLoss(opt)
+
+    if check_nested_key (opt, ['model', 'focal_loss']):
+        if opt['model']['focal_loss']['gamma'] > 0 and opt['model']['focal_loss']['alpha'] > 0:
+            print("Using Focal Loss")
+            return FocalLoss(opt)
     else:
         print("Using BCE Loss")
         return nn.BCEWithLogitsLoss()               # Was CE. Now BCE because its a 0 OR 1 problem, not 0 AND 1.

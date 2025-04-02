@@ -60,6 +60,16 @@ def cuda_available(opt):
 
     return device
 
+# YAML Nested Key Checker
+def check_nested_key(data, keys):
+    """Check if a nested key exists in a YAML dictionary."""
+    for key in keys:
+        if isinstance(data, dict) and key in data:
+            data = data[key]
+        else:
+            return False
+    return True
+
 def log_model(opt, model):
 
     layers = []
