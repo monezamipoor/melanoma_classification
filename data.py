@@ -238,14 +238,14 @@ def melanoma_dataloaders(opt):
         batch_size=opt['dataset']['batch_size'],
         sampler=train_sampler, 
         shuffle=True,
-        num_workers=4
+        num_workers=2
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=opt['dataset']['batch_size'],
         shuffle=False,
-        num_workers=4
+        num_workers=2
     )
     
     return train_loader, val_loader
