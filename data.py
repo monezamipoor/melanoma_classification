@@ -6,61 +6,136 @@ from torchvision.datasets import ImageFolder
 from PIL import Image
 import numpy as np
 import pandas as pd
-from sklearn.model_selection import train_test_split, GroupKFold
+from sklearn.model_selection import train_test_split
 import time
+import random
+
+from torchvision.transforms.functional import InterpolationMode
+
+
+def column_mix(img1, img2, img3, img4):
+
+    w, h = img1.size
+    
+    mixed = Image.new("RGB", (w, h))
+
+    strip_width = w // 4
+
+    col1 = img1.crop((0, 0, strip_width, h))
+    col2 = img2.crop((strip_width, 0, 2 * strip_width, h))
+    col3 = img3.crop((2 * strip_width, 0, 3 * strip_width, h))
+    col4 = img4.crop((3 * strip_width, 0, w, h))
+
+    mixed.paste(col1, (0, 0))
+    mixed.paste(col2, (strip_width, 0))
+    mixed.paste(col3, (2 * strip_width, 0))
+    mixed.paste(col4, (3 * strip_width, 0))
+    
+    return mixed
+
+class QuadrantMixTransform:
+
+    def __init__(self, mix_prob, root, files):
+        self.mix_prob = mix_prob
+        self.root = root
+        self.files = files 
+
+    def __call__(self, img):
+        # With probability mix_prob, perform quadrant mix.
+        if random.random() < self.mix_prob and len(self.files) >= 4:
+            # Randomly sample four indices (without replacement).
+            indices = random.sample(range(len(self.files)), 4)
+            target_size = img.size
+            img1 = Image.open(os.path.join(self.root, self.files[indices[0]])).convert("RGB").resize(target_size)
+            img2 = Image.open(os.path.join(self.root, self.files[indices[1]])).convert("RGB").resize(target_size)
+            img3 = Image.open(os.path.join(self.root, self.files[indices[2]])).convert("RGB").resize(target_size)
+            img4 = Image.open(os.path.join(self.root, self.files[indices[3]])).convert("RGB").resize(target_size)
+            return column_mix(img1, img2, img3, img4)
+        return img
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None):
-
-        # Set opt locally
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=1.0):
+        """
+        subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
+        """
         self.opt = opt
-        # Are we train, val or test?
         self.mode = mode
-        # location of the dataset
         self.root = root
-        # list of files
-        self.files = files
-        # list of classes
-        self.classes = classes
-        # transforms
-        self.transforms = self.build_transforms()              #TODO Transformations
+        
+        # Optionally use only a fraction of the files and classes
+        if subset < 1.0:
+            num_samples = int(len(files) * subset)
+            self.files = files[:num_samples]
+            self.classes = classes[:num_samples]
+        else:
+            self.files = files
+            self.classes = classes
+
+        # Build transforms (could be conditional based on self.mode)
+        self.transforms = self.build_transforms() if transforms is None else transforms
+
 
     def __getitem__(self, item):
-        # read the image
-        image = Image.open(os.path.join(self.root, self.files[item])).convert(mode="RGB")
-        # class for that image
+        image = Image.open(os.path.join(self.root, self.files[item])).convert("RGB")
         class_ = self.classes[item]
-        # apply transformation
+
         if self.transforms:
             image = self.transforms(image)
-
-        # return the image and class
         return image, class_
 
     def __len__(self):
-        # return the total number of images
         return len(self.files)
 
+
     def build_transforms(self):
-        if self.mode == "train":
-            melanoma_transform = transforms.Compose([
-                transforms.Resize(self.opt['dataset']['image_size']),
-                # Add your augmentations here based on opt
-                # Example:
-                # if opt['dataset']['augmentations']['horizontal_flip'] > 0:
-                #     transforms.RandomHorizontalFlip(p=opt['dataset']['augmentations']['horizontal_flip']),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
+        # Always start with resizing based on the desired image size
+        base_transforms = [transforms.Resize(self.opt['dataset']['image_size'])]
         
-        if self.mode == "val":
-            melanoma_transform = transforms.Compose([
-                transforms.Resize(self.opt['dataset']['image_size']),
-                transforms.ToTensor(),
-                transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-            ])
-    
-        return melanoma_transform
+        # Build the training augmentation pipeline
+        if self.mode == "train":
+            aug = self.opt['dataset'].get('augmentations', {})
+            # Horizontal flip
+            if aug.get('horizontal_flip', 0) > 0:
+                base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
+            # Vertical flip
+            if aug.get('vertical_flip', 0) > 0:
+                base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
+            # Random rotation
+            if aug.get('random_rotation', 0) > 0:
+                base_transforms.append(transforms.RandomRotation(
+                    degrees=aug['random_rotation'],
+                    interpolation=InterpolationMode.NEAREST,
+                    fill=(255, 255, 255)  # fill empty areas with white instead of black
+                ))
+            if aug.get('random_shear', 0) > 0:
+                base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
+            if aug.get('shift_vertical', None) is not None:
+                vertical_shift = aug['shift_vertical'][1]
+
+                base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+
+            # Color jitter
+            if aug.get('color_jitter', 0) > 0:
+                cj_value = aug['color_jitter']
+                base_transforms.append(transforms.ColorJitter(
+                    brightness=cj_value,
+                    contrast=cj_value,
+                    saturation=cj_value
+                ))
+            # Add quadrant mixing if enabled
+            if aug.get('image_mix_enabled', False):
+                mix_prob = aug.get('image_mix_prob', 1.0)
+                base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
+
+        
+        base_transforms.extend([
+            transforms.ToTensor(),
+            transforms.Normalize([0.485, 0.456, 0.406],
+                                 [0.229, 0.224, 0.225])
+        ])
+        return transforms.Compose(base_transforms)
+   
+
 
 # TODO this needs implementing properly and testing?
 def stratified_sampler(opt):
