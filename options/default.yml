@@ -56,11 +56,11 @@ training:
 
 # Testing and Logging Arguments
 testing:
-  log_dir: "./logs"
+  log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
-
-  model_save_metric: ["AUC","Accuracy","F1 Score"]
-  checkpoint_dir: "./checkpoints"
+  model_save_metrics: ["AUC"]
+  model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall"]
+  checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
     project_name: # yourproject
     entity: # yourorg
