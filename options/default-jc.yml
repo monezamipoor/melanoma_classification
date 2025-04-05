@@ -32,37 +32,37 @@ model:
   dropout_rate: 0.3
   freeze_backbone: true
   num_frozen_layers: 3
-  focal_loss:
-    gamma: 2.0
-    alpha: 0.25
-    reduction: "mean"
+  #focal_loss:
+    #gamma: 2.0
+    #alpha: 0.25
+    #reduction: "mean"
 
 # Training Arguments
 training:
   optimizer: "adamw" # Options: adam, sgd, adamw, adagrad, amsgrad
-  learning_rate: 0.001
+  learning_rate: 0.01
   scheduler: "cosine" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
 
   epochs: 3
 
-  warmup_epochs: 5
+  warmup_epochs: 0
   freeze_pretrained: true # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
 
 # Testing and Logging Arguments
 testing:
-  log_dir: "./logs"
+  log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
-
-  model_save_metric: ["AUC","Accuracy","F1 Score"]
-  checkpoint_dir: "./checkpoints"
+  model_save_metrics: ["AUC", "Recall"]
+  model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall"]
+  checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
-    project_name: "melanoma-playpen" # yourproject
-    entity: "jc03172-university-of-surrey" # yourorg
-    api_key: "ec4f88fbbc7df980f677f5b76580d03e52373b6e" # Replace with your actual key
+    project_name: #"melanoma-playpen" # yourproject
+    entity: #"jc03172-university-of-surrey" # yourorg
+    api_key: #"ec4f88fbbc7df980f677f5b76580d03e52373b6e" # Replace with your actual key
   early_stopping:
     patience: 10
     min_delta: 0.001
