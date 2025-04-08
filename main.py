@@ -1,4 +1,3 @@
-import wandb
 import argparse
 import yaml
 import os
@@ -6,9 +5,11 @@ import torch
 import torch.cuda.amp as amp
 from torch import optim
 from tqdm import tqdm
+
+import utils
 from data import melanoma_dataloaders
 from model import melanoma_model, melanoma_loss
-from utils import log_results, cuda_available, log_model
+from utils import log_results, cuda_available, log_model, save_checkpoint
 from metrics import evaluate_metrics
 from datetime import datetime
 from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log
@@ -78,7 +79,7 @@ class MelanomaTrainer:
         self.optimizer = self.get_optimizer()
         self.scheduler = self.get_scheduler()
         self.scaler = amp.GradScaler() if opt['training']['mixed_precision'] else None
-        self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metric']}
+        self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
 
         if opt['training']['freeze_pretrained']:
             self.freeze_backbone(bool(opt['training']['freeze_pretrained']))
@@ -112,42 +113,6 @@ class MelanomaTrainer:
         for param in list(self.model.parameters())[:-1]:
             param.requires_grad = freeze
         print("Backbone layers frozen.= " + str(freeze))
-
-    def save_checkpoint(self, epoch, metrics):
-        save_strategy = self.opt['testing']['model_save_strategy']
-        if save_strategy == 'none':
-            return
-        timestamp = datetime.now().isoformat(timespec='minutes')
-        checkpoint_dir = self.opt['testing']['checkpoint_dir']
-        os.makedirs(checkpoint_dir, exist_ok=True)
-
-        if save_strategy == 'best':
-            for metric in self.opt['testing']['model_save_metric']:
-                if metrics[metric] > self.best_metrics[metric]:
-                    self.best_metrics[metric] = metrics[metric]
-                    save_path = os.path.join(
-                        checkpoint_dir,
-                        f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth"
-                    )
-                    torch.save(self.model.state_dict(), save_path)
-                    print(f"Saved best model for {metric} at epoch {epoch+1}")
-
-        elif save_strategy == 'last':
-            save_path = os.path.join(
-                checkpoint_dir,
-                f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_last.pth"
-            )
-            torch.save(self.model.state_dict(), save_path)
-            print(f"Saved last model at epoch {epoch+1}")
-
-        elif save_strategy == 'all':
-            for metric in self.opt['testing']['model_save_metric']:
-                save_path = os.path.join(
-                    checkpoint_dir,
-                    f"{timestamp}_{os.path.basename(self.opt['opt']).replace('.yml', '')}_epoch_{epoch+1}_{metric}.pth"
-                )
-                torch.save(self.model.state_dict(), save_path)
-                print(f"Saved model for {metric} at epoch {epoch+1}")
 
     def train(self):
         print("Starting Training")
@@ -183,8 +148,7 @@ class MelanomaTrainer:
 
             wandb_val_log(avg_loss, val_loss, **val_metrics)
 
-            #TODO with metrics implementation
-            self.save_checkpoint(epoch+1, val_metrics)
+            save_checkpoint(self.opt, self.best_metrics, self.model, epoch + 1, val_metrics)
 
     def train_batch(self, images, labels):
         images, labels = images.to(self.device), labels.to(self.device)
@@ -250,9 +214,8 @@ def argument_parser():
 
 def main():
     opt = argument_parser()
-
     trainer = MelanomaTrainer(opt)
-    log_model(opt, trainer.model)           # Write a CSV of the model structure.
+    #log_model(opt, trainer.model)           # Write a CSV of the model structure.
 
     trainer.train()
 
