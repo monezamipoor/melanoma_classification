@@ -169,7 +169,7 @@ def stratified_sampler(opt):
     return sampler
 
 def up_sampling(files, classes, oversampling_rate=2):
-        
+        ############### Naive random over-sampling ###############
     
     # Separate class 0 and class 1 samples
     class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
