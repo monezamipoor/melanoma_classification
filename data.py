@@ -237,7 +237,7 @@ def melanoma_dataloaders(opt):
     if oversampling_rate > 1.0:
         print("Applying upsampling to the training set with rate", oversampling_rate)
         # Use the up_sampling function on the training split only.
-        train_files, train_classes = up_sampling(opt, oversampling_rate=oversampling_rate)
+        train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
     
     #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
