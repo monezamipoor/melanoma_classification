@@ -167,17 +167,13 @@ def stratified_sampler(opt):
     
     return sampler
 
-def up_sampling(opt, aug=False, oversampling_rate=2):
-    
-    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
-    
-    files = list(dataset['image_name'].values + '.jpg')
-    classes = list(dataset['target'].values)
+def up_sampling(files, classes, oversampling_rate=2):
+        
     
     # Separate class 0 and class 1 samples
     class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
     class_1_files = [file_name for file_name, label in zip(files, classes) if label == 1]
-
+    
     # Option 1 if we want to make the size of the both class exactly like each other 
     # # Get majority count (class 0 count), we know class 1 have 584 and class 0 have 32542 its just for ourself to be completle sure and compare it with after up sampling.
     # majority_count = len(class_0_files)
@@ -192,13 +188,13 @@ def up_sampling(opt, aug=False, oversampling_rate=2):
 
     # Option 2 multiply the minority class by an oversampling rate 
     ## Duplicate class 1 files to match class 0 count
+    
     oversampling_class_1 = class_1_files * oversampling_rate 
 
     # Combine class 0 and oversampled class 1
     new_files = class_0_files + oversampling_class_1
     new_classes = [0] * len(class_0_files) + [1] * len(oversampling_class_1)
-    return new_files, new_classes    
-
+    return new_files, new_classes 
 
 def melanoma_dataloaders(opt):
 
