@@ -3,14 +3,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+from sklearn.model_selection import GroupKFold
 from PIL import Image
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
 import random
-
 from torchvision.transforms.functional import InterpolationMode
+
 
 
 def column_mix(img1, img2, img3, img4):
@@ -209,23 +210,23 @@ def melanoma_dataloaders(opt):
         test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
         train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
 
-        train_files = train_dataset['image_name'].values + '.jpg'
-        train_classes = train_dataset['target'].values
+        all_train_files = train_dataset['image_name'].values + '.jpg'
+        all_train_classes = train_dataset['target'].values
         
         # we will use tfrecord column to grouping the datas and fed it to GroupKFold
         all_groups = train_dataset['tfrecord'].values  
         
-        # We will use 3 fold 
+        # # We will use 3 fold 
         n_splits = opt['dataset'].get('n_splits', 3)  
-        GroupKFold = GroupKFold(n_splits=n_splits)
+        group_kfold = GroupKFold(n_splits=n_splits)
         
         # For simplicity we take the first fold here.
-        train_idx, val_idx = next(GroupKFold.split(train_files, train_classes, groups=all_groups))
+        train_idx, val_idx = next(group_kfold.split(all_train_files, all_train_classes, groups=all_groups))
         
-        train_files = train_files[train_idx]
-        val_files = train_files[val_idx]
-        train_classes = train_classes[train_idx]
-        val_classes = train_classes[val_idx]
+        train_files = all_train_files[train_idx]
+        val_files = all_train_files[val_idx]
+        train_classes = all_train_classes[train_idx]
+        val_classes = all_train_classes[val_idx]
         
     else:
         # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
@@ -283,4 +284,3 @@ def melanoma_dataloaders(opt):
     )
     
     return train_loader, val_loader
-
