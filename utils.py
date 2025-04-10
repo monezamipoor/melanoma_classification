@@ -161,3 +161,44 @@ def save_checkpoint(opt, best_metrics, model, epoch, metrics):
             )
             torch.save(model.state_dict(), save_path)
             print(f"Saved model for {metric} at epoch {epoch+1}")
+
+def check_dataset_balance(dataset, label_name='Label'):
+    from collections import Counter
+    labels = [int(label) for _, label in dataset]
+    count = Counter(labels)
+    total = sum(count.values())
+    print(f"📊 {label_name} distribution:")
+    for cls, num in count.items():
+        pct = 100 * num / total
+        print(f"  Class {cls}: {num} samples ({pct:.2f}%)")
+
+
+def check_prediction_distribution(model, dataloader, device='cuda'):
+    model.eval()
+    all_preds = []
+    all_targets = []
+
+    with torch.no_grad():
+        for images, labels in dataloader:
+            images = images.to(device)
+            labels = labels.to(device).float()
+
+            logits = model(images)
+            if logits.shape[-1] != 1:
+                logits = logits.squeeze(-1)
+
+            probs = torch.sigmoid(logits)
+            preds = (probs > 0.5).int()
+
+            all_preds.extend(preds.cpu().numpy())
+            all_targets.extend(labels.int().cpu().numpy())
+
+            # Stop after one batch
+            break
+
+    from collections import Counter
+    pred_counts = Counter(all_preds)
+    label_counts = Counter(all_targets)
+
+    print("🔍 First batch target distribution:", dict(label_counts))
+    print("🔍 First batch predicted distribution:", dict(pred_counts))

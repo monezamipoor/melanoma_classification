@@ -1,5 +1,8 @@
 import torch
 import torch.nn as nn
+from torch import nn as nn
+
+from utils import check_nested_key
 
 class FocalLoss(nn.Module):
     def __init__(self, opt):
@@ -14,6 +17,8 @@ class FocalLoss(nn.Module):
             self.alpha = opt['model']['focal_loss']['alpha']
         if opt['model']['focal_loss']['reduction'] is not None:
             self.reduction = opt['model']['focal_loss']['reduction']
+
+        print("Focal Loss Alpha/Gamma/Reduction:", self.alpha,'/' ,self.gamma,'/',self.reduction)
 
         self.BCE_Func = nn.BCEWithLogitsLoss(reduction='none')
 
@@ -30,3 +35,41 @@ class FocalLoss(nn.Module):
             return focal_loss.sum()
         else:
             return focal_loss
+
+class DiceLoss(nn.Module):
+    def __init__(self, opt):
+        super(DiceLoss, self).__init__()
+        self.smooth = opt['model'].get('dice_loss_smooth', 1e-6)
+        print("Dice loss smoothing:", self.smooth)
+
+    def forward(self, logits, targets):
+        # Apply sigmoid to logits
+        probs = torch.sigmoid(logits)
+        targets = targets.float()  # Ensure float
+
+        # Flatten the tensors
+        probs = probs.view(-1)
+        targets = targets.view(-1)
+
+        intersection = (probs * targets).sum()
+        dice_score = (2. * intersection + self.smooth) / (probs.sum() + targets.sum() + self.smooth)
+
+        return 1 - dice_score  # Dice loss
+
+
+def melanoma_loss(opt):
+
+    loss_function = opt['model'].get('loss_function', 'bce')
+
+    if loss_function == 'focal':
+        print("Using Focal Loss")
+        return FocalLoss(opt)
+    elif loss_function == 'dice':
+        print("Using Dice Loss")
+        return DiceLoss(opt)
+
+    # If we got here then just use BCE
+
+    bce_weights = opt['model'].get('bce_loss_weights', [1.0])
+    print("Using BCE Loss with weights:", bce_weights)
+    return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(bce_weights))
