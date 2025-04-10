@@ -1,19 +1,24 @@
 import torch
-from sklearn.metrics import confusion_matrix,  roc_curve, auc, average_precision_score
+from sentry_sdk.utils import epoch
+from sklearn.metrics import confusion_matrix,  roc_curve, auc, average_precision_score, roc_auc_score
 import matplotlib.pyplot as plt
 import seaborn as sns
 from torchmetrics.functional.classification import (
     binary_auroc,
     binary_accuracy,
-    precision,
-    recall,
     binary_f1_score,
-    average_precision
+    binary_precision,
+    binary_recall,
+    binary_average_precision,
+    binary_confusion_matrix
 )
+from wandb_helper import wandb_log_cm
 
-def evaluate_metrics(opt, preds, target):
+def evaluate_metrics(opt, preds, target, epoch):
+
     results = {}
-    
+    classlabels = ["Benign", "Malignant"]
+
     # Convert probabilities to binary predictions using a threshold of 0.5.
     preds_binary = (preds > 0.5).int()
     target_int = target.int()
@@ -21,28 +26,32 @@ def evaluate_metrics(opt, preds, target):
     # Retrieve the list of metrics to compute from your configuration.
     config_metrics = opt['testing']['model_metrics']
     def to_scalar(x):
-        return x.item() if isinstance(x, torch.Tensor) else x   
+        return x.item() if isinstance(x, torch.Tensor) else x
+
     # Loop over each metric name and compute the corresponding metric.
     for metric in config_metrics:
         metric_lower = metric.lower()
         if metric_lower == 'auc':
-            results['AUC'] = round(to_scalar(binary_auroc(preds, target, thresholds=5)),4)
+            results['AUC'] = round(to_scalar(binary_auroc(preds, target, thresholds=None)),4)
         elif metric_lower == 'accuracy':
             results['Accuracy'] = round(to_scalar(binary_accuracy(preds, target, threshold=0.5)),4)
         elif metric_lower == 'precision':
-            results['Precision'] = round(to_scalar(precision(preds, target, threshold=0.5, task='binary')),4)
+            results['Precision'] = round(to_scalar(binary_precision(preds, target, threshold=0.5)),4)
         elif metric_lower == 'recall':
-            results['Recall'] = round(to_scalar(recall(preds, target, threshold=0.5, task='binary')),4)
+            results['Recall'] = round(to_scalar(binary_recall(preds, target, threshold=0.5)),4)
         elif metric_lower in ['f1', 'f1 score']:
             results['F1 Score'] = round(to_scalar(binary_f1_score(preds, target, threshold=0.5)),4)
         elif metric_lower in ['average precision', 'ap']:
-            results['Average Precision'] = round(to_scalar(average_precision(preds, target, threshold=0.5)),4)
+            results['Average Precision'] = round(to_scalar(binary_average_precision(preds, target)),4)
         elif metric_lower == 'map':
             results['mAP'] = average_precision_score(target_int.numpy(), preds.numpy())
         elif metric_lower in ['confusion matrix', 'cm']:
             cm = confusion_matrix(target_int.numpy(), preds_binary.numpy())
-            results['Confusion Matrix'] = cm
-            visualize_confusion_matrix(cm)
+            results["Confusion Matrix - Epoch: " + str(epoch)] = cm
+
+            # TODO break out wandb and local display of CMs. Also save CM as part of logging rather than plot them
+            wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
+            #visualize_confusion_matrix(cm, classlabels, "Confusion Matrix - Epoch: " + str(epoch))
         elif metric_lower == 'roc':
             fpr, tpr, roc_thresholds = roc_curve(target_int.numpy(), preds.numpy())
             roc_auc_val = auc(fpr, tpr)

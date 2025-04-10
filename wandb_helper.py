@@ -32,3 +32,21 @@ def wandb_login(opt):
 
 def wandb_watch(model, criterion, log_freq=10):
     wandb.watch(model, criterion, log_freq=log_freq)
+
+def wandb_log_roc(preds, target):
+    print(f"Shape of preds: {len(preds)}")
+    print(f"Shape of target: {len(target)}")
+    print(f"Predictions: {preds[:10]}")
+    print(f"Targets: {target[:10]}")
+
+    roc = wandb.plot.roc_curve(
+        y_true=target, y_pred=preds, labels=['malignant', 'benign']
+    )
+    wandb.log({"roc": roc})
+
+# TODO This seems to log and overwrite CMs in wandb and needs changing to log individual matricies
+def wandb_log_cm(preds, target, labels, title):
+    cm = wandb.plot.confusion_matrix(
+        y_true=target, preds=preds, class_names=labels, title=title
+    )
+    wandb.log({"conf_mat": cm})

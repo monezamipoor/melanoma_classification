@@ -1,7 +1,6 @@
 import torch.nn as nn
 import timm
-from loss import FocalLoss
-from utils import check_nested_key
+
 
 class MelanomaModel(nn.Module):
     def __init__(self, opt):
@@ -14,25 +13,29 @@ class MelanomaModel(nn.Module):
         
         self.num_frozen_layers = opt['model'].get('num_frozen_layers', None)
 
-
         self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
 
         if hasattr(self.backbone, 'fc'):
             feature_dim = self.backbone.num_features
             if hasattr(self.backbone, 'global_pool'):
                 self.backbone.global_pool = nn.AdaptiveAvgPool2d(1)
+                print('Replacing FC layer (Global pooling) ->Classifier')
+            else:
+                print('Replacing FC layer->Classifier')
             self.backbone.fc = nn.Sequential(
                 nn.Flatten(),
                 nn.Dropout(dropout_rate),
                 nn.Linear(feature_dim, 1) 
             )
         elif hasattr(self.backbone, 'head'):
+            print('Replacing Head->Classifier')
             feature_dim = self.backbone.head.in_features
             self.backbone.head = nn.Sequential(
                 nn.Dropout(dropout_rate),
                 nn.Linear(feature_dim, 1)
             )
         elif hasattr(self.backbone, 'classifier'):
+            print('Replacing Classifier')
             feature_dim = self.backbone.classifier.in_features
             self.backbone.classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
@@ -82,16 +85,3 @@ class MelanomaModel(nn.Module):
 def melanoma_model(opt):
     model = MelanomaModel(opt)
     return model
-
-# Comment out the focal loss lines in config to default to BCE Loss
-def melanoma_loss(opt):
-
-    if check_nested_key (opt, ['model', 'focal_loss']):
-        if opt['model']['focal_loss']['gamma'] > 0 and opt['model']['focal_loss']['alpha'] > 0:
-            print("Using Focal Loss")
-            return FocalLoss(opt)
-    else:
-        print("Using BCE Loss")
-        return nn.BCEWithLogitsLoss()               # Was CE. Now BCE because its a 0 OR 1 problem, not 0 AND 1.
-
-

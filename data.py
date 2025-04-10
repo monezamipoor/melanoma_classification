@@ -10,8 +10,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
 import random
+
 from torchvision.transforms.functional import InterpolationMode
 
+import utils
 
 
 def column_mix(img1, img2, img3, img4):
@@ -95,38 +97,40 @@ class MelanomaDataset(Dataset):
         # Build the training augmentation pipeline
         if self.mode == "train":
             aug = self.opt['dataset'].get('augmentations', {})
-            # Horizontal flip
-            if aug.get('horizontal_flip', 0) > 0:
-                base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
-            # Vertical flip
-            if aug.get('vertical_flip', 0) > 0:
-                base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
-            # Random rotation
-            if aug.get('random_rotation', 0) > 0:
-                base_transforms.append(transforms.RandomRotation(
-                    degrees=aug['random_rotation'],
-                    interpolation=InterpolationMode.NEAREST,
-                    fill=(255, 255, 255)  # fill empty areas with white instead of black
-                ))
-            if aug.get('random_shear', 0) > 0:
-                base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
-            if aug.get('shift_vertical', None) is not None:
-                vertical_shift = aug['shift_vertical'][1]
 
-                base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+            if aug is not None and len(aug) > 0:
+                # Horizontal flip
+                if aug.get('horizontal_flip', 0) > 0:
+                    base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
+                # Vertical flip
+                if aug.get('vertical_flip', 0) > 0:
+                    base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
+                # Random rotation
+                if aug.get('random_rotation', 0) > 0:
+                    base_transforms.append(transforms.RandomRotation(
+                        degrees=aug['random_rotation'],
+                        interpolation=InterpolationMode.NEAREST,
+                        fill=(255, 255, 255)  # fill empty areas with white instead of black
+                    ))
+                if aug.get('random_shear', 0) > 0:
+                    base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
+                if aug.get('shift_vertical', None) is not None:
+                    vertical_shift = aug['shift_vertical'][1]
 
-            # Color jitter
-            if aug.get('color_jitter', 0) > 0:
-                cj_value = aug['color_jitter']
-                base_transforms.append(transforms.ColorJitter(
-                    brightness=cj_value,
-                    contrast=cj_value,
-                    saturation=cj_value
-                ))
-            # Add quadrant mixing if enabled
-            if aug.get('image_mix_enabled', False):
-                mix_prob = aug.get('image_mix_prob', 1.0)
-                base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
+                    base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+
+                # Color jitter
+                if aug.get('color_jitter', 0) > 0:
+                    cj_value = aug['color_jitter']
+                    base_transforms.append(transforms.ColorJitter(
+                        brightness=cj_value,
+                        contrast=cj_value,
+                        saturation=cj_value
+                    ))
+                # Add quadrant mixing if enabled
+                if aug.get('image_mix_enabled', False):
+                    mix_prob = aug.get('image_mix_prob', 1.0)
+                    base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
 
         
         base_transforms.extend([
@@ -142,7 +146,7 @@ def stratified_sampler(opt):
 
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
     classes = list(dataset['target'].values)
-    
+
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
     # Create and return sampler uisng params
@@ -174,7 +178,7 @@ def up_sampling(files, classes, oversampling_rate=2):
     # Separate class 0 and class 1 samples
     class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
     class_1_files = [file_name for file_name, label in zip(files, classes) if label == 1]
-    
+
     # Option 1 if we want to make the size of the both class exactly like each other 
     # # Get majority count (class 0 count), we know class 1 have 584 and class 0 have 32542 its just for ourself to be completle sure and compare it with after up sampling.
     # majority_count = len(class_0_files)
@@ -189,13 +193,14 @@ def up_sampling(files, classes, oversampling_rate=2):
 
     # Option 2 multiply the minority class by an oversampling rate 
     ## Duplicate class 1 files to match class 0 count
-    
-    oversampling_class_1 = class_1_files * oversampling_rate 
+
+    oversampling_class_1 = class_1_files * oversampling_rate
 
     # Combine class 0 and oversampled class 1
     new_files = class_0_files + oversampling_class_1
     new_classes = [0] * len(class_0_files) + [1] * len(oversampling_class_1)
-    return new_files, new_classes 
+    return new_files, new_classes
+
 
 def melanoma_dataloaders(opt):
 
@@ -212,22 +217,23 @@ def melanoma_dataloaders(opt):
 
         all_train_files = train_dataset['image_name'].values + '.jpg'
         all_train_classes = train_dataset['target'].values
-        
+
         # we will use tfrecord column to grouping the datas and fed it to GroupKFold
-        all_groups = train_dataset['tfrecord'].values  
-        
-        # # We will use 3 fold 
-        n_splits = opt['dataset'].get('n_splits', 3)  
+        all_groups = train_dataset['tfrecord'].values
+
+        # # We will use 3 fold
+        n_splits = opt['dataset'].get('n_splits', 3)
         group_kfold = GroupKFold(n_splits=n_splits)
-        
+
         # For simplicity we take the first fold here.
         train_idx, val_idx = next(group_kfold.split(all_train_files, all_train_classes, groups=all_groups))
-        
+
         train_files = all_train_files[train_idx]
         val_files = all_train_files[val_idx]
         train_classes = all_train_classes[train_idx]
         val_classes = all_train_classes[val_idx]
-        
+        print("Using k-fold:", n_splits)
+
     else:
         # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
         train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
@@ -239,7 +245,7 @@ def melanoma_dataloaders(opt):
         print("Applying upsampling to the training set with rate", oversampling_rate)
         # Use the up_sampling function on the training split only.
         train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
-    
+
     #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
         opt,
@@ -266,21 +272,24 @@ def melanoma_dataloaders(opt):
             use_stratified=opt['dataset'].get('stratified_batching', False)
         )
     '''
-    
+
+    utils.check_dataset_balance(train_dataset)
+    utils.check_dataset_balance(val_dataset)
+
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=opt['dataset']['batch_size'],
         sampler=train_sampler, 
         shuffle=True,
-        num_workers=4
+        num_workers=2
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=opt['dataset']['batch_size'],
         shuffle=False,
-        num_workers=4
+        num_workers=2
     )
     
     return train_loader, val_loader

@@ -4,11 +4,13 @@ import os
 import torch
 import torch.cuda.amp as amp
 from torch import optim
+from torchinfo import summary
 from tqdm import tqdm
 
 import utils
 from data import melanoma_dataloaders
-from model import melanoma_model, melanoma_loss
+from model import melanoma_model
+from loss import melanoma_loss
 from utils import log_results, cuda_available, log_model, save_checkpoint
 from metrics import evaluate_metrics
 from datetime import datetime
@@ -75,16 +77,16 @@ class MelanomaTrainer:
         self.device = cuda_available(self.opt)
         self.train_loader, self.val_loader = melanoma_dataloaders(opt)
         self.model = melanoma_model(opt).to(self.device)
-        self.criterion = melanoma_loss(opt)
+        self.criterion = melanoma_loss(opt).to(self.device)
         self.optimizer = self.get_optimizer()
         self.scheduler = self.get_scheduler()
         self.scaler = amp.GradScaler() if opt['training']['mixed_precision'] else None
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
 
-        if opt['training']['freeze_pretrained']:
+        '''if opt['training']['freeze_pretrained']:
             self.freeze_backbone(bool(opt['training']['freeze_pretrained']))
         else:
-            self.freeze_backbone(False)
+            self.freeze_backbone(False)'''
 
         self.logwandb = wandb_login(opt)    # Track if we have an active wandb login
         print("Wandb: ", self.logwandb)
@@ -107,7 +109,9 @@ class MelanomaTrainer:
         elif self.opt['training']['scheduler'] == 'step':
             return torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.opt['training']['step_size'], gamma=self.opt['training']['decay_rate'])
         elif self.opt['training']['scheduler'] == 'reduce_on_plateau':
-            return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1)
+            return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1, verbose=True)
+        else:
+            return None
 
     def freeze_backbone(self, freeze=False):
         for param in list(self.model.parameters())[:-1]:
@@ -115,6 +119,9 @@ class MelanomaTrainer:
         print("Backbone layers frozen.= " + str(freeze))
 
     def train(self):
+
+        #summary(self.model, input_size=(1, 3, 224, 224))       # Quick print of model arch if needed
+
         print("Starting Training")
         wandb_watch(self.model, self.criterion, log_freq=10)
 
@@ -141,8 +148,10 @@ class MelanomaTrainer:
             wandb_train_log(epoch+1, float(loss))
 
             avg_loss = total_loss / len(self.train_loader)
-            val_loss, val_metrics = self.validate()             #TODO Would this be better extracted outside of the train method?
-            self.scheduler.step(val_loss if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
+            val_loss, val_metrics = self.validate(epoch)             #TODO Would this be better extracted outside of the train method?
+
+            if self.scheduler is not None:
+                self.scheduler.step(val_loss if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
             print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
 
@@ -169,7 +178,7 @@ class MelanomaTrainer:
             self.optimizer.step()
         return loss
 
-    def validate(self):
+    def validate(self, epoch):
         self.model = self.model.to(self.device)
         self.model.eval()
         total_loss = 0
@@ -197,7 +206,7 @@ class MelanomaTrainer:
                     all_labels = torch.cat((all_labels, labels.cpu()), dim=0)
 
         avg_loss = total_loss / len(self.val_loader)
-        metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels)
+        metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
         log_results(self.opt, metrics)
         return avg_loss, metrics
 
