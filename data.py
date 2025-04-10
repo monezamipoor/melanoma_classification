@@ -220,13 +220,14 @@ def melanoma_dataloaders(opt):
         n_splits = opt['dataset'].get('n_splits', 3)  
         group_kfold = GroupKFold(n_splits=n_splits)
         
-        # For simplicity we take the first fold here.
-        train_idx, val_idx = next(group_kfold.split(all_train_files, all_train_classes, groups=all_groups))
+        fold_loaders = []
+        for fold, (train_idx, val_idx) in enumerate(group_kfold.split(all_train_files, all_train_classes, groups=all_groups)):
+            # Get the file names and classes for this fold:
+            train_files_fold = all_train_files[train_idx]
+            val_files_fold = all_train_files[val_idx]
+            train_classes_fold = all_train_classes[train_idx]
+            val_classes_fold = all_train_classes[val_idx]
         
-        train_files = all_train_files[train_idx]
-        val_files = all_train_files[val_idx]
-        train_classes = all_train_classes[train_idx]
-        val_classes = all_train_classes[val_idx]
         
     else:
         # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
