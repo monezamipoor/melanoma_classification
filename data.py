@@ -10,8 +10,10 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
 import random
+
 from torchvision.transforms.functional import InterpolationMode
 
+import utils
 
 
 def column_mix(img1, img2, img3, img4):
@@ -95,38 +97,40 @@ class MelanomaDataset(Dataset):
         # Build the training augmentation pipeline
         if self.mode == "train":
             aug = self.opt['dataset'].get('augmentations', {})
-            # Horizontal flip
-            if aug.get('horizontal_flip', 0) > 0:
-                base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
-            # Vertical flip
-            if aug.get('vertical_flip', 0) > 0:
-                base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
-            # Random rotation
-            if aug.get('random_rotation', 0) > 0:
-                base_transforms.append(transforms.RandomRotation(
-                    degrees=aug['random_rotation'],
-                    interpolation=InterpolationMode.NEAREST,
-                    fill=(255, 255, 255)  # fill empty areas with white instead of black
-                ))
-            if aug.get('random_shear', 0) > 0:
-                base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
-            if aug.get('shift_vertical', None) is not None:
-                vertical_shift = aug['shift_vertical'][1]
 
-                base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+            if aug is not None and len(aug) > 0:
+                # Horizontal flip
+                if aug.get('horizontal_flip', 0) > 0:
+                    base_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
+                # Vertical flip
+                if aug.get('vertical_flip', 0) > 0:
+                    base_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
+                # Random rotation
+                if aug.get('random_rotation', 0) > 0:
+                    base_transforms.append(transforms.RandomRotation(
+                        degrees=aug['random_rotation'],
+                        interpolation=InterpolationMode.NEAREST,
+                        fill=(255, 255, 255)  # fill empty areas with white instead of black
+                    ))
+                if aug.get('random_shear', 0) > 0:
+                    base_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255) ))
+                if aug.get('shift_vertical', None) is not None:
+                    vertical_shift = aug['shift_vertical'][1]
 
-            # Color jitter
-            if aug.get('color_jitter', 0) > 0:
-                cj_value = aug['color_jitter']
-                base_transforms.append(transforms.ColorJitter(
-                    brightness=cj_value,
-                    contrast=cj_value,
-                    saturation=cj_value
-                ))
-            # Add quadrant mixing if enabled
-            if aug.get('image_mix_enabled', False):
-                mix_prob = aug.get('image_mix_prob', 1.0)
-                base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
+                    base_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255, 255, 255) ))
+
+                # Color jitter
+                if aug.get('color_jitter', 0) > 0:
+                    cj_value = aug['color_jitter']
+                    base_transforms.append(transforms.ColorJitter(
+                        brightness=cj_value,
+                        contrast=cj_value,
+                        saturation=cj_value
+                    ))
+                # Add quadrant mixing if enabled
+                if aug.get('image_mix_enabled', False):
+                    mix_prob = aug.get('image_mix_prob', 1.0)
+                    base_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
 
         
         base_transforms.extend([
@@ -135,6 +139,8 @@ class MelanomaDataset(Dataset):
                                  [0.229, 0.224, 0.225])
         ])
         return transforms.Compose(base_transforms)
+   
+
    
 
 # TODO this needs implementing properly and testing?
