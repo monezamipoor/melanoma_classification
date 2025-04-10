@@ -3,14 +3,15 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+from sklearn.model_selection import GroupKFold
 from PIL import Image
 import numpy as np
 import pandas as pd
 from sklearn.model_selection import train_test_split
 import time
 import random
-
 from torchvision.transforms.functional import InterpolationMode
+
 
 
 def column_mix(img1, img2, img3, img4):
@@ -137,7 +138,11 @@ class MelanomaDataset(Dataset):
    
 
 # TODO this needs implementing properly and testing?
-def stratified_sampler(classes):
+def stratified_sampler(opt):
+
+    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    classes = list(dataset['target'].values)
+    
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
     # Create and return sampler uisng params
@@ -163,15 +168,13 @@ def stratified_sampler(classes):
     
     return sampler
 
-def up_sampling(files, classes, aug=False, oversampling_rate=2):
-    
-    files = list(files)
-    classes = list(classes)
+def up_sampling(files, classes, oversampling_rate=2):
+        ############### Naive random over-sampling ###############
     
     # Separate class 0 and class 1 samples
     class_0_files = [file_name for file_name, label in zip(files, classes) if label == 0]
     class_1_files = [file_name for file_name, label in zip(files, classes) if label == 1]
-
+    
     # Option 1 if we want to make the size of the both class exactly like each other 
     # # Get majority count (class 0 count), we know class 1 have 584 and class 0 have 32542 its just for ourself to be completle sure and compare it with after up sampling.
     # majority_count = len(class_0_files)
@@ -186,13 +189,13 @@ def up_sampling(files, classes, aug=False, oversampling_rate=2):
 
     # Option 2 multiply the minority class by an oversampling rate 
     ## Duplicate class 1 files to match class 0 count
+    
     oversampling_class_1 = class_1_files * oversampling_rate 
 
     # Combine class 0 and oversampled class 1
     new_files = class_0_files + oversampling_class_1
     new_classes = [0] * len(class_0_files) + [1] * len(oversampling_class_1)
-    return new_files, new_classes    
-
+    return new_files, new_classes 
 
 def melanoma_dataloaders(opt):
 
@@ -201,10 +204,42 @@ def melanoma_dataloaders(opt):
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
     classes = dataset['target'].values                  # Target classes (0 = benign, 1 = malignant)
 
-    # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
-    train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
-                                                                            test_size=0.2, stratify=classes)
+    if opt['dataset'].get('use_groupkfold', False):
 
+        # Splitting the train and test datasets
+        test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
+        train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+
+        all_train_files = train_dataset['image_name'].values + '.jpg'
+        all_train_classes = train_dataset['target'].values
+        
+        # we will use tfrecord column to grouping the datas and fed it to GroupKFold
+        all_groups = train_dataset['tfrecord'].values  
+        
+        # # We will use 3 fold 
+        n_splits = opt['dataset'].get('n_splits', 3)  
+        group_kfold = GroupKFold(n_splits=n_splits)
+        
+        # For simplicity we take the first fold here.
+        train_idx, val_idx = next(group_kfold.split(all_train_files, all_train_classes, groups=all_groups))
+        
+        train_files = all_train_files[train_idx]
+        val_files = all_train_files[val_idx]
+        train_classes = all_train_classes[train_idx]
+        val_classes = all_train_classes[val_idx]
+        
+    else:
+        # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
+        train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
+                                                                                test_size=0.2, stratify=classes)
+
+     # ===== APPLY OVERSAMPLING ON THE TRAINING SET IF ENABLED =====
+    oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
+    if oversampling_rate > 1.0:
+        print("Applying upsampling to the training set with rate", oversampling_rate)
+        # Use the up_sampling function on the training split only.
+        train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
+    
     #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
         opt,
@@ -238,14 +273,14 @@ def melanoma_dataloaders(opt):
         batch_size=opt['dataset']['batch_size'],
         sampler=train_sampler, 
         shuffle=True,
-        num_workers=2
+        num_workers=4
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=opt['dataset']['batch_size'],
         shuffle=False,
-        num_workers=2
+        num_workers=4
     )
     
     return train_loader, val_loader
