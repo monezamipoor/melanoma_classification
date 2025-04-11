@@ -1,6 +1,6 @@
 # Dataset Arguments
 dataset:
-  use_groupkfold: true
+  use_groupkfold: false
   n_splits: 3
   image_size: [224, 224]  # Width, Height of input images
   augmentations:
@@ -9,6 +9,7 @@ dataset:
     random_rotation: 15  # degrees
     color_jitter: 0.2  # brightness, contrast, saturation
   oversampling_rate: 20  # For imbalanced datasets - Multiplication factor
+
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
   dataset_train_csv: "/content/Melanoma/train.csv"
@@ -26,15 +27,15 @@ model:
   backbone: "efficientnet_b0" # Options: resnet18, resnet50, efficientnet_b0, vit_base
   pretrained: true
   output_neurons: 1 # Number of classes
-  dropout_rate: 0.2
+  dropout_rate: 0.3
   freeze_backbone: true
-  num_frozen_layers: 2
-  loss_function: 'focal'      # 'bce', 'focal', 'dice'
+  num_frozen_layers: 3
+  loss_function: 'bce'      # 'bce', 'focal', 'dice'
   bce_loss_weights: [1.0]   # Make this a factor of the majority:minority class imbalance. E.g. [4.0] = 4 majority : 1 minority
   dice_loss_smooth: 0.000001
   focal_loss:
     gamma: 2.0
-    alpha: 20
+    alpha: 0.25
     reduction: "mean"
 
 # Training Arguments
@@ -57,9 +58,9 @@ testing:
   model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall", "cm"]
   checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
-    #project_name: melanoma-detection
-    #entity: Shayan Nasiri
-    #api_key: 04ce538aff1dcfddf7d301726f202bfdf5664e72
+    project_name: #"melanoma-full-runs" # ONLY USE "melanoma-full-runs" FOR COMPLETE TESTS. OTHERWISE USE "melanoma-playpen"
+    entity: #"jc03172-university-of-surrey" # yourorg
+    api_key: # Replace with your actual key
   early_stopping:
     patience: 10
     min_delta: 0.001

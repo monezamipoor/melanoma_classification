@@ -1,4 +1,3 @@
-wandb
 timm
 tqdm
 pandas
@@ -8,3 +7,9 @@ torchmetrics
 matplotlib
 seaborn
 wandb
+torchinfo
+torch
+torchvision
+pillow
+PyYAML
+sentry-sdk

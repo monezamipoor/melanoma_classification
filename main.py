@@ -130,6 +130,9 @@ class MelanomaTrainer:
         print("Backbone layers frozen?= " + str(freeze))
 
     def train(self):
+        #summary(self.model, input_size=(1, 3, 224, 224))       # Quick print of model arch if needed
+        print("Starting Training")
+        wandb_watch(self.model, self.criterion, log_freq=10)
 
         if self.is_kfold:
             for fold_data in self.fold_loaders:
@@ -243,8 +246,8 @@ class MelanomaTrainer:
             self.optimizer.step()
         return loss
 
-
     def validate(self, val_loader, epoch):
+        self.model = self.model.to(self.device)
         self.model.eval()
         total_loss = 0
 
@@ -268,8 +271,7 @@ class MelanomaTrainer:
                     all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
                     all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
 
-        avg_loss = total_loss / len(val_loader)
-        # pass epoch+1 or epoch if needed for logging
+        avg_loss = total_loss / len(self.val_loader)
         metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
         log_results(self.opt, metrics)
         return avg_loss, metrics
