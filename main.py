@@ -271,7 +271,7 @@ class MelanomaTrainer:
                     all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
                     all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
 
-        avg_loss = total_loss / len(self.val_loader)
+        avg_loss = total_loss / len(val_loader)
         metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
         log_results(self.opt, metrics)
         return avg_loss, metrics
