@@ -57,7 +57,7 @@ class QuadrantMixTransform:
         return img
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=1.0):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.5):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
@@ -210,42 +210,82 @@ def melanoma_dataloaders(opt):
     classes = dataset['target'].values                  # Target classes (0 = benign, 1 = malignant)
 
     if opt['dataset'].get('use_groupkfold', False):
+      # Split the train and test datasets by group (e.g., tfrecord values)
+      test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
+      train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+      oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
+      all_train_files = train_dataset['image_name'].values + '.jpg'
+      all_train_classes = train_dataset['target'].values
+      all_groups = train_dataset['tfrecord'].values
 
-        # Splitting the train and test datasets
-        test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
-        train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
+      n_splits = opt['dataset'].get('n_splits', 3)
+      group_kfold = GroupKFold(n_splits=n_splits)
 
-        all_train_files = train_dataset['image_name'].values + '.jpg'
-        all_train_classes = train_dataset['target'].values
+      fold_loaders = []
+      # Loop over each fold
+      for fold, (train_idx, val_idx) in enumerate(group_kfold.split(all_train_files, all_train_classes, groups=all_groups)):
+          # Get the file names and classes for this fold
+          train_files_fold = all_train_files[train_idx]
+          val_files_fold = all_train_files[val_idx]
+          train_classes_fold = all_train_classes[train_idx]
+          val_classes_fold = all_train_classes[val_idx]
 
-        # we will use tfrecord column to grouping the datas and fed it to GroupKFold
-        all_groups = train_dataset['tfrecord'].values
+          # Apply oversampling if enabled
+          if oversampling_rate > 1.0:
+              print("Applying upsampling to the training set for fold", fold, "with rate", oversampling_rate)
+              train_files_fold, train_classes_fold = up_sampling(train_files_fold, train_classes_fold, oversampling_rate=oversampling_rate)
 
-        # # We will use 3 fold
-        n_splits = opt['dataset'].get('n_splits', 3)
-        group_kfold = GroupKFold(n_splits=n_splits)
+          # Create dataset objects for this fold
+          train_dataset_fold = MelanomaDataset(
+              opt,
+              'train',
+              opt['dataset']['dataset_train_path'],
+              train_files_fold, train_classes_fold,
+              transforms=None
+          )
+          val_dataset_fold = MelanomaDataset(
+              opt,
+              'val',
+              opt['dataset']['dataset_val_path'],
+              val_files_fold, val_classes_fold,
+              transforms=None
+          )
 
-        # For simplicity we take the first fold here.
-        train_idx, val_idx = next(group_kfold.split(all_train_files, all_train_classes, groups=all_groups))
+          # Create DataLoaders for this fold
+          train_loader_fold = DataLoader(
+              train_dataset_fold,
+              batch_size=opt['dataset']['batch_size'],
+              shuffle=True,
+              num_workers=4
+          )
+          val_loader_fold = DataLoader(
+              val_dataset_fold,
+              batch_size=opt['dataset']['batch_size'],
+              shuffle=False,
+              num_workers=4
+          )
 
-        train_files = all_train_files[train_idx]
-        val_files = all_train_files[val_idx]
-        train_classes = all_train_classes[train_idx]
-        val_classes = all_train_classes[val_idx]
-        print("Using k-fold:", n_splits)
+          # Append the loaders along with the fold number into the list
+          fold_loaders.append({
+              'fold': fold,
+              'train_loader': train_loader_fold,
+              'val_loader': val_loader_fold
+          })
+      # Return the list of fold loaders
+      return fold_loaders
 
+              
     else:
         # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
         train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
                                                                                 test_size=0.2, stratify=classes)
-
-     # ===== APPLY OVERSAMPLING ON THE TRAINING SET IF ENABLED =====
-    oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
-    if oversampling_rate > 1.0:
-        print("Applying upsampling to the training set with rate", oversampling_rate)
-        # Use the up_sampling function on the training split only.
-        train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
-
+        # ===== APPLY OVERSAMPLING ON THE TRAINING SET IF ENABLED =====
+        oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
+        if oversampling_rate > 1.0:
+            print("Applying upsampling to the training set with rate", oversampling_rate)
+            # Use the up_sampling function on the training split only.
+            train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
+    
     #opt, root, files, classes, transforms=None
     train_dataset = MelanomaDataset(
         opt,
@@ -272,24 +312,21 @@ def melanoma_dataloaders(opt):
             use_stratified=opt['dataset'].get('stratified_batching', False)
         )
     '''
-
-    utils.check_dataset_balance(train_dataset)
-    utils.check_dataset_balance(val_dataset)
-
+    
     # Create dataloaders
     train_loader = DataLoader(
         train_dataset,
         batch_size=opt['dataset']['batch_size'],
         sampler=train_sampler, 
         shuffle=True,
-        num_workers=2
+        num_workers=4
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=opt['dataset']['batch_size'],
         shuffle=False,
-        num_workers=2
+        num_workers=4
     )
     
     return train_loader, val_loader
