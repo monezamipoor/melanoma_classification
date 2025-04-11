@@ -57,7 +57,7 @@ class QuadrantMixTransform:
         return img
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.5):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.1):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
