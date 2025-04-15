@@ -1,7 +1,15 @@
-wandb
 timm
 tqdm
 pandas
 numpy
 scikit-learn
 torchmetrics
+matplotlib
+seaborn
+wandb
+torchinfo
+torch
+torchvision
+pillow
+PyYAML
+sentry-sdk
