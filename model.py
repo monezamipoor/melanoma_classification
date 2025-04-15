@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 import timm
 
@@ -84,4 +85,9 @@ class MelanomaModel(nn.Module):
 
 def melanoma_model(opt):
     model = MelanomaModel(opt)
+
+    if opt['dataset']['savedmodel'] is not None:
+        print('Loading saved model: ', opt['dataset']['savedmodel'])
+        model.load_state_dict(torch.load(opt['dataset']['savedmodel']))
+
     return model

@@ -15,6 +15,7 @@ dataset:
   dataset_train_csv: "/content/Melanoma/train.csv"
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/test"
+  dataset_test_csv: "/content/Melanoma/test.csv"
   batch_size: 32
 
 # Model Arguments
