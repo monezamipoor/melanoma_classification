@@ -4,7 +4,7 @@ dataset:
   use_groupkfold: false
   n_splits: 3
   downsampling_rate: 0.3 # Keep X% of class 0
-  oversampling_rate: 4 # Leave at 1 to disable
+  oversampling_rate: 3 # Leave at 1 to disable
   augmentations:
     #horizontal_flip: 0.2
     vertical_flip: 0.2
