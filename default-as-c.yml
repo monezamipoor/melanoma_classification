@@ -1,0 +1,73 @@
+# Dataset Arguments
+dataset:
+  image_size: [224, 224] # Width, Height of input images
+  use_groupkfold: false
+  n_splits: 3
+  downsampling_rate: 0.4 # Keep X% of class 0
+  oversampling_rate: 2 # Leave at 1 to disable
+  augmentations:
+    #horizontal_flip: 0.2
+    vertical_flip: 0.2
+    #random_rotation: 20 # degrees
+    color_jitter: 0.2 # brightness, contrast, saturation
+    image_mix_enabled: True
+    image_mix_type: column # Use "column" to activate ColumnMixTransform.
+    image_mix_prob: 0.2
+    #random_shear: 20
+    #shift_vertical: 0.2
+  #stratified_batching: true  # For maintaining class distribution in batches
+  dataset_train_path: "C:\\Users\\ashka\\Downloads\\melanoma\\train"
+  dataset_train_csv: "C:\\Users\\ashka\\Downloads\\melanoma\\train.csv"
+  dataset_val_path: "C:\\Users\\ashka\\Downloads\\melanoma\\train"
+  dataset_test_path: "C:\\Users\\ashka\\Downloads\\melanoma\\test"
+  batch_size: 32
+  # dataset_train_path: "./data/test"
+  # k_fold_validation: 5 # Options: k, none
+  # test: false # Include test dataset as well or only train and validation
+  # add_metadata: false # adding or removing metadata
+
+# Model Arguments
+model:
+  backbone: "efficientnet_b0" # Options: resnet18, resnet50, efficientnet_b0, vit_base_mci_224, swin_tiny_patch4_window7_224
+  pretrained: true
+  output_neurons: 1 # Number of classes
+  dropout_rate: 0.2
+  freeze_backbone: false
+  num_unfrozen_layers: 0 #unfreeze layers before the classifier
+  loss_function: "bce" # 'bce', 'focal', 'dice'
+  bce_loss_weights: [2.0]
+  dice_loss_smooth: 0.000001
+  focal_loss:
+    gamma: 2.0
+    alpha: 0.25
+    reduction: "mean"
+
+# Training Arguments
+training:
+  optimizer: "amsgrad" # Options: adam, sgd, adamw, adagrad, amsgrad
+  learning_rate: 0.001
+  scheduler: "none" # Options: cosine, step, reduce_on_plateau
+  decay_rate: 0.1 # For step scheduler
+  step_size: 30 # Epochs between decay for step scheduler
+
+  epochs: 5
+
+  warmup_epochs: 0
+  freeze_pretrained: false # Whether to freeze backbone layers
+  mixed_precision: false # Whether to use mixed precision training
+  gradient_clipping: 1.0
+
+# Testing and Logging Arguments
+testing:
+  log_dir: "./logs" # YAML-TIMESTAMP gets created under here
+  model_save_strategy: "best" # Options: all, best, last, none
+  model_save_metrics: ["AUC", "Recall"]
+  model_metrics: ["AUC", "Accuracy", "F1 Score", "Precision", "Recall", "cm"]
+  checkpoint_dir: "./checkpoints" # creates this as a sub-dir under each run
+  wandb:
+    project_name: "Melanoma" # yourproject
+    entity: "ashkan132-fard" # yourorg
+    api_key: "e32e31ab856f60bb3a50f3439a4526ecee094986" # Replace with your actual key
+  early_stopping:
+    patience: 10
+    min_delta: 0.001
