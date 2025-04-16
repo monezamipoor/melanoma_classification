@@ -8,8 +8,6 @@ from numpy.f2py.auxfuncs import throw_error
 EPOCH= 0
 rundir = None
 
-
-
 # Determine cuda and use this as a way to configure any device params
 # opt is passed but not currently used
 def cuda_available(opt):
@@ -202,3 +200,24 @@ def check_prediction_distribution(model, dataloader, device='cuda'):
 
     print("🔍 First batch target distribution:", dict(label_counts))
     print("🔍 First batch predicted distribution:", dict(pred_counts))
+
+# Takes logits
+def write_kaggle_csv(opt, images, preds):
+    log_dir = run_dir(opt)
+
+    image_list = [item.replace('.jpg', '') for item in images.tolist()]
+    preds_binary = torch.sigmoid(preds)
+
+    df = pd.DataFrame({
+        'image_name': image_list,
+        'target': preds_binary.tolist()
+    })
+
+    config_name = os.path.basename(opt['opt']).replace('.yml', '')
+    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions.csv")
+
+    df.to_csv(fileout, index=False)
+
+
+
+

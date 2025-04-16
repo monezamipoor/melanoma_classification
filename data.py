@@ -57,7 +57,7 @@ class QuadrantMixTransform:
         return img
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=0.1):
+    def __init__(self, opt, mode, root, files, classes, transforms=None, subset=1):
         """
         subset: Fraction of the dataset to use (e.g., 0.2 for 20%)
         """
@@ -202,7 +202,42 @@ def up_sampling(files, classes, oversampling_rate=2):
     return new_files, new_classes
 
 
-def melanoma_dataloaders(opt):
+def melanoma_test_dataloaders(opt):
+
+    dataset = pd.read_csv(opt['dataset']['dataset_test_csv'])
+
+    files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
+
+    if 'target' not in dataset:
+        classes = np.full((len(dataset),), -1)
+    else:
+        classes = dataset['target'].values
+
+    # if we are missing labels we need to tell the main loop that we can't predict
+    if np.min(classes) < 0:
+        predictmode = True
+    else:
+        predictmode = False
+
+    test_dataset = MelanomaDataset(
+        opt,
+        'val',
+        opt['dataset']['dataset_test_path'], files, classes,
+        transforms=None,  # TODO Could drop this if transforms are being handled via config.
+        subset=1
+    )
+
+    test_loader = DataLoader(
+        test_dataset,
+        batch_size=opt['dataset']['batch_size'],
+        shuffle=False,
+        num_workers=2
+    )
+
+    return predictmode, test_loader
+
+
+def melanoma_train_dataloaders(opt):
 
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
 
@@ -256,13 +291,13 @@ def melanoma_dataloaders(opt):
               train_dataset_fold,
               batch_size=opt['dataset']['batch_size'],
               shuffle=True,
-              num_workers=4
+              num_workers=2
           )
           val_loader_fold = DataLoader(
               val_dataset_fold,
               batch_size=opt['dataset']['batch_size'],
               shuffle=False,
-              num_workers=4
+              num_workers=2
           )
 
           # Append the loaders along with the fold number into the list
@@ -312,6 +347,9 @@ def melanoma_dataloaders(opt):
             use_stratified=opt['dataset'].get('stratified_batching', False)
         )
     '''
+
+    utils.check_dataset_balance(train_dataset)
+    utils.check_dataset_balance(val_dataset)
     
     # Create dataloaders
     train_loader = DataLoader(
@@ -319,14 +357,14 @@ def melanoma_dataloaders(opt):
         batch_size=opt['dataset']['batch_size'],
         sampler=train_sampler, 
         shuffle=True,
-        num_workers=4
+        num_workers=2
     )
     
     val_loader = DataLoader(
         val_dataset,
         batch_size=opt['dataset']['batch_size'],
         shuffle=False,
-        num_workers=4
+        num_workers=2
     )
     
     return train_loader, val_loader
