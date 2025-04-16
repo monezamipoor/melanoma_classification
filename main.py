@@ -8,6 +8,7 @@ from torchinfo import summary
 from tqdm import tqdm
 
 import utils
+
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
 from model import melanoma_model
 from loss import melanoma_loss
@@ -20,6 +21,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 #wandb.init(mode="disabled")
+
 
 
 # TODO comments needed
@@ -72,6 +74,7 @@ def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDr
     print(f"Saved augmented samples to {save_path}")
 
 
+
 class MelanomaTest:
     def __init__(self, opt):
         self.opt = opt
@@ -98,6 +101,17 @@ class MelanomaTrainer:
         # K-Fold 
         if opt['dataset'].get('use_groupkfold', False):
             # Expecting that melanoma_dataloaders() returns a list of dicts for each fold
+
+            # print(f"\n Train Loader Size: {len(self.train_loader.dataset)} samples")
+            # print(f" Val Loader Size: {len(self.val_loader.dataset)} samples")
+
+            # # Optional: Print label distribution in train set
+            # targets = [label for _, label in self.train_loader.dataset]
+            # if torch.is_tensor(targets[0]):
+            #     targets = [t.item() for t in targets]
+            # print(f"🔍 Train Labels Distribution: {np.bincount(np.array(targets).astype(int))}")
+
+
             self.fold_loaders = melanoma_train_dataloaders(opt)  # e.g. [{'fold': 0, 'train_loader': ..., 'val_loader': ...}, ...]
             self.is_kfold = True
         else:
@@ -116,10 +130,13 @@ class MelanomaTrainer:
         else:
             self.freeze_backbone(False)'''
 
+
+
         self.logwandb = wandb_login(opt)  # Track if we have an active wandb login
         print("Wandb: ", self.logwandb)
 
         log_model(self.opt, self.model)
+
 
     def get_optimizer(self):
         if self.opt['training']['optimizer'] == 'adam':
@@ -137,8 +154,8 @@ class MelanomaTrainer:
         if self.opt['training']['scheduler'] == 'cosine':
             return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.opt['training']['epochs'])
         elif self.opt['training']['scheduler'] == 'step':
-            return torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.opt['training']['step_size'],
-                                                   gamma=self.opt['training']['decay_rate'])
+
+            return torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[self.opt['training']['step_size']], gamma=self.opt['training']['decay_rate'])
         elif self.opt['training']['scheduler'] == 'reduce_on_plateau':
             return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1, verbose=True)
         else:
@@ -260,7 +277,7 @@ def train_batch(melanomamodel, images, labels):
         melanomamodel.scaler.update()
     else:
         outputs = melanomamodel.model(images)
-        loss = melanomamodel.criterion(outputs.squeeze(1),
+        loss = melanomamodel.criterion(outputs,
                                        labels.float())  # Need to squeeze [BS, 1] to [BS] and BCE uses float
         loss.backward()
         melanomamodel.optimizer.step()
@@ -278,8 +295,10 @@ def validate(melanomamodel, val_loader, epoch=1):
         for images, labels in loop:
             images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
 
+
             outputs = melanomamodel.model(images)
-            loss = melanomamodel.criterion(outputs.view(-1), labels.view(-1).float())
+            loss = melanomamodel.criterion(outputs, labels.float())
+
 
             total_loss += loss.item()
 
@@ -292,7 +311,7 @@ def validate(melanomamodel, val_loader, epoch=1):
                 all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
 
         avg_loss = total_loss / len(val_loader)
-        metrics = evaluate_metrics(melanomamodel.opt, all_outputs.squeeze(1), all_labels, epoch+1)
+        metrics = evaluate_metrics(melanomamodel.opt, all_outputs, all_labels, epoch+1)
         log_results(melanomamodel.opt, metrics)
     return avg_loss, metrics
 
@@ -316,6 +335,7 @@ def predict(melanomamodel, val_loader, epoch=1):
                 all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
 
     write_kaggle_csv(melanomamodel.opt, val_loader.dataset.files, all_outputs.squeeze(1))
+
 
 
 def argument_parser():
