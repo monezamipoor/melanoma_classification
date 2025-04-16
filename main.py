@@ -131,7 +131,7 @@ class MelanomaTrainer:
         if self.opt['training']['scheduler'] == 'cosine':
             return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.opt['training']['epochs'])
         elif self.opt['training']['scheduler'] == 'step':
-            return torch.optim.lr_scheduler.StepLR(self.optimizer, step_size=self.opt['training']['step_size'],
+            return torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[self.opt['training']['step_size']],
                                                    gamma=self.opt['training']['decay_rate'])
         elif self.opt['training']['scheduler'] == 'reduce_on_plateau':
             return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1, verbose=True)
@@ -255,7 +255,7 @@ class MelanomaTrainer:
             self.scaler.update()
         else:
             outputs = self.model(images)
-            loss = self.criterion(outputs.squeeze(1),
+            loss = self.criterion(outputs,
                                   labels.float())  # Need to squeeze [BS, 1] to [BS] and BCE uses float
             loss.backward()
             self.optimizer.step()
@@ -274,7 +274,7 @@ class MelanomaTrainer:
                 images, labels = images.to(self.device), labels.to(self.device)
 
                 outputs = self.model(images)
-                loss = self.criterion(outputs.view(-1), labels.view(-1).float())
+                loss = self.criterion(outputs, labels.float())
 
                 total_loss += loss.item()
 
@@ -287,7 +287,9 @@ class MelanomaTrainer:
                     all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
 
         avg_loss = total_loss / len(val_loader)
-        metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
+        # metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
+        metrics = evaluate_metrics(self.opt, all_outputs, all_labels, epoch+1)
+
         log_results(self.opt, metrics)
         return avg_loss, metrics
 
