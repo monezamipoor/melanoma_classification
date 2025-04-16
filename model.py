@@ -120,9 +120,9 @@ class MelanomaModel(nn.Module):
             else:
                 raise ValueError(f"Unexpected shape: {features.shape}")
 
-            return self.classifier(features)  # [B]
+            return self.classifier(features).squeeze(-1)  # [B]
         else:
-            return self.backbone(x)
+            return self.backbone(x).squeeze(-1)
 
 
 def melanoma_model(opt):
