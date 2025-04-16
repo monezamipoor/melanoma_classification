@@ -1,66 +1,61 @@
 # Dataset Arguments
 dataset:
-  image_size: [224, 224] # Width, Height of input images
+  use_groupkfold: false
+  n_splits: 3
+  image_size: [224, 224]  # Width, Height of input images
   augmentations:
-    horizontal_flip: 0.4
-    vertical_flip: 0.2
-    random_rotation: 10 # degrees
-    color_jitter: 0.2 # brightness, contrast, saturation
-    image_mix_enabled: True
-    image_mix_type: column   # Use "column" to activate ColumnMixTransform.
-    image_mix_prob: 0.3   
-    random_shear: 10 
-    shift_vertical: [0.1, 0.1]
+    horizontal_flip: 0.5
+    vertical_flip: 0.3
+    random_rotation: 15  # degrees
+    color_jitter: 0.2  # brightness, contrast, saturation
+  oversampling_rate: 20  # For imbalanced datasets - Multiplication factor
 
-  #oversampling_rate: 1.5  # For imbalanced datasets
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
-
-  dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/train-small.csv"
-
+  dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/data/train-0-11.csv"
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/test"
-  batch_size: 16
-  # dataset_train_path: "./data/test"
-  # k_fold_validation: 5 # Options: k, none
-  # test: false # Include test dataset as well or only train and validation
-  # add_metadata: false # adding or removing metadata
+  dataset_test_csv: "/content/drive/MyDrive/melanoma_classification/data/test-12-14.csv"
+  batch_size: 32
 
 # Model Arguments
 model:
-  backbone: "resnet50" # Options: resnet18, resnet50, efficientnet_b0, vit_base
+  backbone: "efficientnet_b0" # Options: resnet18, resnet50, efficientnet_b0, vit_base
   pretrained: true
   output_neurons: 1 # Number of classes
-  #focal_loss_gamma: 2.0  # Focusing parameter for focal loss
   dropout_rate: 0.3
   freeze_backbone: true
   num_frozen_layers: 3
+  loss_function: 'bce'      # 'bce', 'focal', 'dice'
+  bce_loss_weights: [1.0]   # Make this a factor of the majority:minority class imbalance. E.g. [4.0] = 4 majority : 1 minority
+  dice_loss_smooth: 0.000001
+  focal_loss:
+    gamma: 2.0
+    alpha: 0.25
+    reduction: "mean"
 
 # Training Arguments
 training:
-  optimizer: "amsgrad" # Options: adam, sgd, adamw, adagrad, amsgrad
-  learning_rate: 0.001
-  scheduler: "cosine" # Options: cosine, step, reduce_on_plateau
-  decay_rate: 0.1 # For step scheduler
-  step_size: 30 # Epochs between decay for step scheduler
-
-  epochs: 35
-
+  optimizer: "adamw"  # Options: adam, sgd, adamw, amsgrad
+  learning_rate: 0.003
+  scheduler: "step"  # Options: cosine, step, reduce_on_plateau
+  decay_rate: 0.1  # For step scheduler
+  step_size: 30  # Epochs between decay for step scheduler
+  epochs: 10
   warmup_epochs: 5
-  freeze_pretrained: true # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
 
 # Testing and Logging Arguments
 testing:
-  log_dir: "./logs"
+  log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
-
-  model_save_metric: ["AUC","Accuracy","F1 Score"]
-  checkpoint_dir: "./checkpoints"
+  model_save_metrics: ["AUC"]
+  model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall", "cm"]
+  checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
-    project_name: # yourproject
-    entity: # yourorg
+    project_name: #"melanoma-full-runs" # ONLY USE "melanoma-full-runs" FOR COMPLETE TESTS. OTHERWISE USE "melanoma-playpen"
+    entity: #"jc03172-university-of-surrey" # yourorg
     api_key: # Replace with your actual key
   early_stopping:
     patience: 10

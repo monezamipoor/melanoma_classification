@@ -8,10 +8,11 @@ from torchinfo import summary
 from tqdm import tqdm
 
 import utils
-from data import melanoma_dataloaders
+
+from data import melanoma_train_dataloaders, melanoma_test_dataloaders
 from model import melanoma_model
 from loss import melanoma_loss
-from utils import log_results, cuda_available, log_model, save_checkpoint
+from utils import log_results, cuda_available, log_model, save_checkpoint, write_kaggle_csv
 from metrics import evaluate_metrics
 from datetime import datetime
 from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log
@@ -73,6 +74,25 @@ def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDr
     print(f"Saved augmented samples to {save_path}")
 
 
+
+class MelanomaTest:
+    def __init__(self, opt):
+        self.opt = opt
+        print(opt)
+        self.device = cuda_available(self.opt)
+
+        self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
+        self.is_kfold = False
+
+        self.model = melanoma_model(opt).to(self.device)
+        self.criterion = melanoma_loss(opt).to(self.device)
+        self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
+
+        self.logwandb = wandb_login(opt)  # Track if we have an active wandb login
+        print("Wandb: ", self.logwandb)
+
+        log_model(self.opt, self.model)
+
 class MelanomaTrainer:
     def __init__(self, opt):
         self.opt = opt
@@ -81,12 +101,6 @@ class MelanomaTrainer:
         # K-Fold 
         if opt['dataset'].get('use_groupkfold', False):
             # Expecting that melanoma_dataloaders() returns a list of dicts for each fold
-            self.fold_loaders = melanoma_dataloaders(opt)  # e.g. [{'fold': 0, 'train_loader': ..., 'val_loader': ...}, ...]
-            self.is_kfold = True
-        else:
-            self.train_loader, self.val_loader = melanoma_dataloaders(opt)
-            self.is_kfold = False
-
 
             # print(f"\n Train Loader Size: {len(self.train_loader.dataset)} samples")
             # print(f" Val Loader Size: {len(self.val_loader.dataset)} samples")
@@ -98,7 +112,11 @@ class MelanomaTrainer:
             # print(f"🔍 Train Labels Distribution: {np.bincount(np.array(targets).astype(int))}")
 
 
-      
+            self.fold_loaders = melanoma_train_dataloaders(opt)  # e.g. [{'fold': 0, 'train_loader': ..., 'val_loader': ...}, ...]
+            self.is_kfold = True
+        else:
+            self.train_loader, self.val_loader = melanoma_train_dataloaders(opt)
+            self.is_kfold = False
 
         self.model = melanoma_model(opt).to(self.device)
         self.criterion = melanoma_loss(opt).to(self.device)
@@ -112,8 +130,13 @@ class MelanomaTrainer:
         else:
             self.freeze_backbone(False)'''
 
+
+
         self.logwandb = wandb_login(opt)  # Track if we have an active wandb login
         print("Wandb: ", self.logwandb)
+
+        log_model(self.opt, self.model)
+
 
     def get_optimizer(self):
         if self.opt['training']['optimizer'] == 'adam':
@@ -131,8 +154,8 @@ class MelanomaTrainer:
         if self.opt['training']['scheduler'] == 'cosine':
             return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.opt['training']['epochs'])
         elif self.opt['training']['scheduler'] == 'step':
-            return torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[self.opt['training']['step_size']],
-                                                   gamma=self.opt['training']['decay_rate'])
+
+            return torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[self.opt['training']['step_size']], gamma=self.opt['training']['decay_rate'])
         elif self.opt['training']['scheduler'] == 'reduce_on_plateau':
             return torch.optim.lr_scheduler.ReduceLROnPlateau(self.optimizer, patience=5, factor=0.1, verbose=True)
         else:
@@ -143,172 +166,220 @@ class MelanomaTrainer:
             param.requires_grad = not freeze
         print("Backbone layers frozen?= " + str(freeze))
 
-    def train(self):
-        #summary(self.model, input_size=(1, 3, 224, 224))       # Quick print of model arch if needed
+def train(melanomamodel):
+    #summary(self.model, input_size=(1, 3, 224, 224))       # Quick print of model arch if needed
+    print("Starting Training")
+    wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
+
+    if melanomamodel.is_kfold:
+        for fold_data in melanomamodel.fold_loaders:
+            fold_idx = fold_data['fold']
+            print(f"\n[INFO] Starting Fold {fold_idx}")
+
+            # Re-initialize the model for each fold (bassically a fresh start):
+            melanomamodel.model = melanoma_model(melanomamodel.opt).to(melanomamodel.device)
+            melanomamodel.optimizer = melanomamodel.get_optimizer()
+            melanomamodel.scheduler = melanomamodel.get_scheduler()
+
+            train_loader = fold_data['train_loader']
+            val_loader   = fold_data['val_loader']
+
+            wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
+
+            for epoch in range(melanomamodel.opt['training']['epochs']):
+                melanomamodel.model.train()
+                total_loss = 0
+
+                loop = tqdm(train_loader, desc=f"[Fold {fold_idx}] Epoch {epoch+1}/{melanomamodel.opt['training']['epochs']}")
+
+                for images, labels in loop:
+                    loss = train_batch(melanomamodel, images, labels)
+
+                    if melanomamodel.opt['training']['gradient_clipping']:
+                        torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
+
+                    total_loss += loss.item()
+                    loop.set_postfix(loss=loss.item())
+
+                # Log final batch loss for the epoch
+                wandb_train_log(epoch+1, float(loss))
+
+                avg_loss = total_loss / len(train_loader)
+
+                # Validate on this fold's val loader
+                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+
+                # Step the scheduler if applicable
+                if melanomamodel.scheduler is not None:
+                    if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        melanomamodel.scheduler.step(val_loss)
+                    else:
+                        melanomamodel.scheduler.step()
+
+                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+
+                # Log validation results to wandb
+                wandb_val_log(avg_loss, val_loss, **val_metrics,)
+
+                # Save checkpoint for best model or last, etc.
+                save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
+
+    else:
+        # Single train/val scenario
         print("Starting Training")
-        wandb_watch(self.model, self.criterion, log_freq=10)
+        wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
-        if self.is_kfold:
-            for fold_data in self.fold_loaders:
-                fold_idx = fold_data['fold']
-                print(f"\n[INFO] Starting Fold {fold_idx}")
+        for epoch in range(melanomamodel.opt['training']['epochs']):
+          melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
+          melanomamodel.model.train()
+          total_loss = 0
 
-                # Re-initialize the model for each fold (bassically a fresh start):
-                self.model = melanoma_model(self.opt).to(self.device)
-                self.optimizer = self.get_optimizer()
-                self.scheduler = self.get_scheduler()
+          loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch + 1}/{melanomamodel.opt['training']['epochs']}")
 
-                train_loader = fold_data['train_loader']
-                val_loader   = fold_data['val_loader']
-                #print(train_loader.size)
+          #If you want to see the images after Aug
+          # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
 
-                wandb_watch(self.model, self.criterion, log_freq=10)
+          for images, labels in loop:
+              loss = train_batch(melanomamodel, images, labels)
 
-                for epoch in range(self.opt['training']['epochs']):
-                    self.model.train()
-                    total_loss = 0
+              if melanomamodel.opt['training']['gradient_clipping']:
+                  torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
 
-                    loop = tqdm(train_loader, desc=f"[Fold {fold_idx}] Epoch {epoch+1}/{self.opt['training']['epochs']}")
-
-                    for images, labels in loop:
-                        loss = self.train_batch(images, labels)
-
-                        if self.opt['training']['gradient_clipping']:
-                            torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt['training']['gradient_clipping'])
-
-                        total_loss += loss.item()
-                        loop.set_postfix(loss=loss.item())
-
-                    # Log final batch loss for the epoch
-                    wandb_train_log(epoch+1, float(loss))
-
-                    avg_loss = total_loss / len(train_loader)
-
-                    # Validate on this fold's val loader
-                    val_loss, val_metrics = self.validate(val_loader, epoch)
-
-                    # Step the scheduler if applicable
-                    if self.scheduler is not None:
-                        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                            self.scheduler.step(val_loss)
-                        else:
-                            self.scheduler.step()
-
-                    print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
-
-                    # Log validation results to wandb
-                    wandb_val_log(avg_loss, val_loss, **val_metrics,)
-
-                    # Save checkpoint for best model or last, etc.
-                    save_checkpoint(self.opt, self.best_metrics, self.model, epoch+1, val_metrics)
-
-        else:
-            # Single train/val scenario
-            print("Starting Training")
-            wandb_watch(self.model, self.criterion, log_freq=10)
-
-            for epoch in range(self.opt['training']['epochs']):
-              self.model = self.model.to(self.device)
-              self.model.train()
-              total_loss = 0
-
-              loop = tqdm(self.train_loader, desc=f"Epoch {epoch+1}/{self.opt['training']['epochs']}")
-
-              #If you want to see the images after Aug
-              #save_augmented_samples(self.train_loader, num_samples=30, save_dir="/content/drive/MyDrive/melanoma/logs/Sample")
-
-              for images, labels in loop:
-                  loss = self.train_batch(images, labels)
-
-                  if self.opt['training']['gradient_clipping']:
-                      torch.nn.utils.clip_grad_norm_(self.model.parameters(), self.opt['training']['gradient_clipping'])
-
-                  total_loss += loss.item()
-                  loop.set_postfix(loss=loss.item())
+              total_loss += loss.item()
+              loop.set_postfix(loss=loss.item())
 
 
-              wandb_train_log(epoch+1, float(loss))
+          wandb_train_log(epoch+1, float(loss))
 
-              avg_loss = total_loss / len(self.train_loader)
-              val_loss, val_metrics = self.validate(self.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
+          avg_loss = total_loss / len(melanomamodel.train_loader)
+          val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
 
-              if self.scheduler is not None:
-                  self.scheduler.step(val_loss if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
+          if melanomamodel.scheduler is not None:
+              melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
-              print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+          print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
 
-              wandb_val_log(avg_loss, val_loss, **val_metrics)
+          wandb_val_log(avg_loss, val_loss, **val_metrics)
 
-              save_checkpoint(self.opt, self.best_metrics, self.model, epoch + 1, val_metrics)
+          save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
 
 
-    def train_batch(self, images, labels):
-        images, labels = images.to(self.device), labels.to(self.device)
-        self.optimizer.zero_grad()
-        # TODO mixed precision is not tested
-        if self.opt['training']['mixed_precision']:
-            with amp.autocast():
-                outputs = self.model(images)
-                loss = self.criterion(outputs, labels)
-            self.scaler.scale(loss).backward()
-            self.scaler.step(self.optimizer)
-            self.scaler.update()
-        else:
-            outputs = self.model(images)
-            loss = self.criterion(outputs,
-                                  labels.float())  # Need to squeeze [BS, 1] to [BS] and BCE uses float
-            loss.backward()
-            self.optimizer.step()
-        return loss
+def train_batch(melanomamodel, images, labels):
+    images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
+    melanomamodel.optimizer.zero_grad()
+    # TODO mixed precision is not tested
+    if melanomamodel.opt['training']['mixed_precision']:
+        with amp.autocast():
+            outputs = melanomamodel.model(images)
+            loss = melanomamodel.criterion(outputs, labels)
+        melanomamodel.scaler.scale(loss).backward()
+        melanomamodel.scaler.step(melanomamodel.optimizer)
+        melanomamodel.scaler.update()
+    else:
+        outputs = melanomamodel.model(images)
+        loss = melanomamodel.criterion(outputs,
+                                       labels.float())  # Need to squeeze [BS, 1] to [BS] and BCE uses float
+        loss.backward()
+        melanomamodel.optimizer.step()
+    return loss
 
-    def validate(self, val_loader, epoch):
-        self.model = self.model.to(self.device)
-        self.model.eval()
-        total_loss = 0
+def validate(melanomamodel, val_loader, epoch=1):
+    melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
+    melanomamodel.model.eval()
+    total_loss = 0
 
-        with torch.no_grad():
-            loop = tqdm(val_loader, desc="[Val]")
+    with torch.no_grad():
+        loop = tqdm(val_loader, desc="[Val]")
 
-            firstitr = True
-            for images, labels in loop:
-                images, labels = images.to(self.device), labels.to(self.device)
+        firstitr = True
+        for images, labels in loop:
+            images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
 
-                outputs = self.model(images)
-                loss = self.criterion(outputs, labels.float())
 
-                total_loss += loss.item()
+            outputs = melanomamodel.model(images)
+            loss = melanomamodel.criterion(outputs, labels.float())
 
-                if firstitr:
-                    all_outputs = outputs.cpu()
-                    all_labels  = labels.cpu()
-                    firstitr = False
-                else:
-                    all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
-                    all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
+
+            total_loss += loss.item()
+
+            if firstitr:
+                all_outputs = outputs.cpu()
+                all_labels  = labels.cpu()
+                firstitr = False
+            else:
+                all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
+                all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
 
         avg_loss = total_loss / len(val_loader)
-        # metrics = evaluate_metrics(self.opt, all_outputs.squeeze(1), all_labels, epoch+1)
-        metrics = evaluate_metrics(self.opt, all_outputs, all_labels, epoch+1)
+        metrics = evaluate_metrics(melanomamodel.opt, all_outputs, all_labels, epoch+1)
+        log_results(melanomamodel.opt, metrics)
+    return avg_loss, metrics
 
-        log_results(self.opt, metrics)
-        return avg_loss, metrics
+def predict(melanomamodel, val_loader, epoch=1):
+    melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
+    melanomamodel.model.eval()
+
+    with torch.no_grad():
+        loop = tqdm(val_loader, desc="[Val]")
+
+        firstitr = True
+        for images, labels in loop:
+            images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
+
+            outputs = melanomamodel.model(images)
+
+            if firstitr:
+                all_outputs = outputs.cpu()
+                firstitr = False
+            else:
+                all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
+
+    write_kaggle_csv(melanomamodel.opt, val_loader.dataset.files, all_outputs.squeeze(1))
+
 
 
 def argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
+    parser.add_argument("-s", "--savedmodel", type=str, required=False, help="the model file to test")
+    parser.add_argument("-t", "--testcsv", type=str, required=False, help="the csv file to test")
     args = parser.parse_args()
+
     if not os.path.isabs(args.opt) and not args.opt.startswith('./'):
         args.opt = os.path.join("./options", args.opt)
     with open(args.opt, "r") as f:
         opt = yaml.safe_load(f)
     opt['opt'] = args.opt
+
+    if args.savedmodel:
+        opt['dataset']['savedmodel'] = args.savedmodel
+    else:
+        opt['dataset']['savedmodel'] = None
+    if args.testcsv:
+        opt['dataset']['dataset_test_csv'] = args.testcsv
+
     return opt
 
 def main():
     opt = argument_parser()
-    trainer = MelanomaTrainer(opt)
-    trainer.train()
+
+    if opt['dataset']['savedmodel']:
+        print(opt['dataset']['savedmodel'])
+        print(opt['dataset']['dataset_test_csv'])
+
+        melanomamodel = MelanomaTest(opt)
+
+        # predict only? This happens when our test file does not have labels
+        if melanomamodel.predictmode:
+            print("PREDICT MODEL MODE")
+            predict(melanomamodel, melanomamodel.val_loader, 1)
+        else:
+            print("TEST MODEL MODE")
+            validate(melanomamodel, melanomamodel.val_loader, 1)
+    else:
+        print("TRAIN MODEL MODE")
+        melanomamodel = MelanomaTrainer(opt)
+        train(melanomamodel)
 
 if __name__ == "__main__":
     main()

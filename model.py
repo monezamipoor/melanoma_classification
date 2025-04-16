@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import timm
 
+
 class MelanomaModel(nn.Module):
     def __init__(self, opt):
         super(MelanomaModel, self).__init__()
@@ -19,13 +20,16 @@ class MelanomaModel(nn.Module):
             self.backbone = timm.create_model(backbone_name, pretrained=pretrained, num_classes=0)
             feature_dim = self.backbone.num_features
             self.classifier = nn.Sequential(
+
                 nn.Dropout(dropout_rate),
                 nn.Linear(feature_dim, opt['model']['output_neurons'])  # Output shape: [B, 1]
             )
+
         elif "efficientnet" in backbone_name.lower():
             self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
 
             # EfficientNet uses .classifier as its final layer
+
             feature_dim = self.backbone.classifier.in_features
             self.backbone.classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
@@ -126,4 +130,11 @@ class MelanomaModel(nn.Module):
 
 
 def melanoma_model(opt):
-    return MelanomaModel(opt)
+
+    model = MelanomaModel(opt)
+
+    if opt['dataset']['savedmodel'] is not None:
+        print('Loading saved model: ', opt['dataset']['savedmodel'])
+        model.load_state_dict(torch.load(opt['dataset']['savedmodel']))
+
+    return model
