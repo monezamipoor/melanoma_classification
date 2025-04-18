@@ -1,25 +1,35 @@
 # Dataset Arguments
 dataset:
   image_size: [224, 224] # Width, Height of input images
-  use_groupkfold: False
+  use_groupkfold: false
   n_splits: 3
+  downsampling_rate: 1 # Keep X% of class 0
+  oversampling_rate: 1 # Leave at 1 to disable
   augmentations:
-    horizontal_flip: 0.4
-    #vertical_flip: 0.2
-    #random_rotation: 10 # degrees
-    #color_jitter: 0.2 # brightness, contrast, saturation
-    #image_mix_enabled: True
-    #image_mix_type: column   # Use "column" to activate ColumnMixTransform.
-    #image_mix_prob: 0.3
-    #random_shear: 10
-    #shift_vertical: [0.1, 0.1]
-  oversampling_rate: 2
+    #horizontal_flip: 0.2
+    vertical_flip: 0.2
+    #random_rotation: 20 # degrees
+    color_jitter: 0.2 # brightness, contrast, saturation
+    image_mix_enabled: True
+    image_mix_type: column # Use "column" to activate ColumnMixTransform.
+    image_mix_prob: 0.2
+    #random_shear: 20
+    #shift_vertical: 0.2
+  #stratified_batching: true  # For maintaining class distribution in batches
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
   dataset_train_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
   dataset_val_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
-  dataset_test_csv: "H:/My Drive/melanoma/melanoma-256-jpg/test.csv"
-  dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/test"
+
+  # kaggle test set
+  #dataset_test_csv: "data/test-unlabelled.csv"
+  #dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+
+  # labelled-test
+  #dataset_test_csv: "data/test-12-14.csv"
+  dataset_test_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
+  dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+
   batch_size: 32
   # dataset_train_path: "./data/test"
   # k_fold_validation: 5 # Options: k, none
@@ -28,14 +38,14 @@ dataset:
 
 # Model Arguments
 model:
-  backbone: "efficientnet_b2" # Options: resnet18, resnet50, efficientnet_b0, vit_base
+  backbone: "efficientnet_b0" # Options: resnet18, resnet50, efficientnet_b0, vit_base_mci_224, swin_tiny_patch4_window7_224
   pretrained: true
   output_neurons: 1 # Number of classes
-  dropout_rate: 0.3
-  freeze_backbone: true
-  num_frozen_layers: 3
-  loss_function: 'bce'      # 'bce', 'focal', 'dice'
-  bce_loss_weights: [1.0]
+  dropout_rate: 0.2
+  freeze_backbone: false
+  num_unfrozen_layers: 0 #unfreeze layers before the classifier
+  loss_function: "bce" # 'bce', 'focal', 'dice'
+  bce_loss_weights: [2.0]
   dice_loss_smooth: 0.000001
   focal_loss:
     gamma: 2.0
@@ -50,10 +60,10 @@ training:
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
 
-  epochs: 3
+  epochs: 2
 
   warmup_epochs: 0
-  freeze_pretrained: true # Whether to freeze backbone layers
+  freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
 
@@ -61,8 +71,8 @@ training:
 testing:
   log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
-  model_save_metrics: ["AUC", "Recall"]
-  model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall", "cm"]
+  model_save_metrics: ["AUC"]
+  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
   checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
     project_name: "melanoma-playpen" # yourproject

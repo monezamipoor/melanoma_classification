@@ -14,7 +14,7 @@ dataset:
   dataset_train_path: "/content/Melanoma/train"
   dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/data/train-0-11.csv"
   dataset_val_path: "/content/Melanoma/train"
-  dataset_test_path: "/content/Melanoma/test"
+  dataset_test_path: "/content/Melanoma/train"
   dataset_test_csv: "/content/drive/MyDrive/melanoma_classification/data/test-12-14.csv"
   batch_size: 32
 
@@ -51,7 +51,7 @@ testing:
   log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
   model_save_metrics: ["AUC"]
-  model_metrics: ["AUC","Accuracy","F1 Score", "Precision", "Recall", "cm"]
+  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
   checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   wandb:
     project_name: #"melanoma-full-runs" # ONLY USE "melanoma-full-runs" FOR COMPLETE TESTS. OTHERWISE USE "melanoma-playpen"
