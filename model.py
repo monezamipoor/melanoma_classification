@@ -11,79 +11,126 @@ class MelanomaModel(nn.Module):
         pretrained = opt['model']['pretrained']
         dropout_rate = opt['model']['dropout_rate']
         self.freeze_backbone = opt['model'].get('freeze_backbone', False)
-        
-        self.num_frozen_layers = opt['model'].get('num_frozen_layers', None)
+        self.num_unfrozen_layers = opt['model'].get('num_unfrozen_layers', None)
 
-        self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
+        # Check if using a transformer-based architecture
+        self.is_transformer = any(keyword in backbone_name.lower() for keyword in ["swin", "vit"])
 
-        if hasattr(self.backbone, 'fc'):
+        if self.is_transformer:
+            self.backbone = timm.create_model(backbone_name, pretrained=pretrained, num_classes=0)
             feature_dim = self.backbone.num_features
-            if hasattr(self.backbone, 'global_pool'):
-                self.backbone.global_pool = nn.AdaptiveAvgPool2d(1)
-                print('Replacing FC layer (Global pooling) ->Classifier')
-            else:
-                print('Replacing FC layer->Classifier')
-            self.backbone.fc = nn.Sequential(
-                nn.Flatten(),
+            self.classifier = nn.Sequential(
+
                 nn.Dropout(dropout_rate),
-                nn.Linear(feature_dim, 1) 
+                nn.Linear(feature_dim, opt['model']['output_neurons'])  # Output shape: [B, 1]
             )
-        elif hasattr(self.backbone, 'head'):
-            print('Replacing Head->Classifier')
-            feature_dim = self.backbone.head.in_features
-            self.backbone.head = nn.Sequential(
-                nn.Dropout(dropout_rate),
-                nn.Linear(feature_dim, 1)
-            )
-        elif hasattr(self.backbone, 'classifier'):
-            print('Replacing Classifier')
+
+        elif "efficientnet" in backbone_name.lower():
+            self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
+
+            # EfficientNet uses .classifier as its final layer
+
             feature_dim = self.backbone.classifier.in_features
             self.backbone.classifier = nn.Sequential(
                 nn.Dropout(dropout_rate),
-                nn.Linear(feature_dim, 1)
+                nn.Linear(feature_dim, opt['model']['output_neurons'])
             )
+            self.classifier = None
         else:
-            raise ValueError("The backbone model does not have a recognized classifier head attribute.")
+            self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
+
+            if hasattr(self.backbone, 'fc'):
+                feature_dim = self.backbone.num_features
+                if hasattr(self.backbone, 'global_pool'):
+                    self.backbone.global_pool = nn.AdaptiveAvgPool2d(1)
+                self.backbone.fc = nn.Sequential(
+                    nn.Flatten(),
+                    nn.Dropout(dropout_rate),
+                    nn.Linear(feature_dim, opt['model']['output_neurons'])
+                )
+                self.classifier = None
+            elif hasattr(self.backbone, 'head'):
+                feature_dim = self.backbone.head.in_features
+                self.backbone.head = nn.Sequential(
+                    nn.AdaptiveAvgPool2d((1, 1)),
+                    nn.Flatten(),
+                    nn.Dropout(dropout_rate),
+                    nn.Linear(feature_dim, opt['model']['output_neurons'])
+                )
+                self.classifier = None
+            elif hasattr(self.backbone, 'classifier'):
+                feature_dim = self.backbone.classifier.in_features
+                self.backbone.classifier = nn.Sequential(
+                    nn.AdaptiveAvgPool2d((1, 1)),
+                    nn.Flatten(),
+                    nn.Dropout(dropout_rate),
+                    nn.Linear(feature_dim, opt['model']['output_neurons'])
+                )
+                self.classifier = None
+            else:
+                raise ValueError("Unsupported backbone structure: no classifier head found.")
 
         if self.freeze_backbone:
             self.freeze_layers()
 
     def freeze_layers(self):
-        """
-        Freeze layers dynamically based on self.num_frozen_layers.
-        If self.num_frozen_layers is specified, freeze all backbone modules
-        except the last self.num_frozen_layers.
-        Otherwise, freeze all parameters except those belonging to the classifier head.
-        """
-        if self.num_frozen_layers is not None:
-            # Get an ordered list of backbone children.
-            children = list(self.backbone.children())
-            num_children = len(children)
-            # We'll unfreeze the last `self.num_frozen_layers` modules.
-            start_unfreeze = max(num_children - self.num_frozen_layers, 0)
-            for idx, child in enumerate(children):
-                if idx < start_unfreeze:
-                    for param in child.parameters():
-                        param.requires_grad = False
-                else:
-                    for param in child.parameters():
-                        param.requires_grad = True
-            print(f"Frozen the first {start_unfreeze} modules; last {self.num_frozen_layers} modules are trainable.")
+        if self.is_transformer:
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+            self._set_module_trainable(self.classifier, True)
+            print("Transformer backbone frozen; classifier remains trainable.")
         else:
-            # Default behavior: freeze all layers except those in classifier head.
-            for name, param in self.backbone.named_parameters():
-                if "fc" in name or "head" in name or "classifier" in name:
-                    param.requires_grad = True
-                else:
-                    param.requires_grad = False
-            print("Backbone layers have been frozen except classifier head.")
+            for param in self.backbone.parameters():
+                param.requires_grad = False
+
+            # Detect classifier
+            classifier = getattr(self.backbone, 'fc', None) or \
+                         getattr(self.backbone, 'head', None) or \
+                         getattr(self.backbone, 'classifier', None)
+
+            if classifier:
+                self._set_module_trainable(classifier, True)
+
+            children = list(self.backbone.children())
+            if classifier in children:
+                children.remove(classifier)
+
+            if self.num_unfrozen_layers and len(children) > 0:
+                to_unfreeze = children[-self.num_unfrozen_layers:]
+                for module in to_unfreeze:
+                    self._set_module_trainable(module, True)
+                print(f"Unfroze the last {self.num_unfrozen_layers} modules + classifier.")
+            else:
+                print("Only classifier head remains trainable.")
+
+    @staticmethod
+    def _set_module_trainable(module, trainable):
+        for param in module.parameters():
+            param.requires_grad = trainable
 
     def forward(self, x):
-        return self.backbone(x)
+        if self.is_transformer:
+            features = self.backbone.forward_features(x)  # shape: [B, H, W, C]
 
+            if features.ndim == 4:
+                # [B, H, W, C] → [B, C, H, W] for pooling
+                features = features.permute(0, 3, 1, 2)         # [B, C, H, W]
+                features = torch.nn.functional.adaptive_avg_pool2d(features, 1)  # [B, C, 1, 1]
+                features = features.view(features.size(0), -1)  # [B, C]
+            elif features.ndim == 3:
+                features = features[:, 0]  # [B, D]
+            elif features.ndim == 2:
+                pass  # Already [B, D]
+            else:
+                raise ValueError(f"Unexpected shape: {features.shape}")
+
+            return self.classifier(features).squeeze(-1)  # [B]
+        else:
+            return self.backbone(x).squeeze(-1)
 
 
 def melanoma_model(opt):
+
     model = MelanomaModel(opt)
 
     if opt['dataset']['savedmodel'] is not None:

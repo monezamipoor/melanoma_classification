@@ -1,6 +1,8 @@
 import torch
 from sentry_sdk.utils import epoch
-from sklearn.metrics import confusion_matrix,  roc_curve, auc, average_precision_score, roc_auc_score
+
+from sklearn.metrics import confusion_matrix,  roc_curve, auc, average_precision_score, roc_auc_score, precision_recall_curve
+
 import matplotlib.pyplot as plt
 import seaborn as sns
 from torchmetrics.functional.classification import (
@@ -13,6 +15,16 @@ from torchmetrics.functional.classification import (
     binary_confusion_matrix
 )
 from wandb_helper import wandb_log_cm
+
+
+
+def find_best_threshold(y_true, y_probs):
+    precision, recall, thresholds = precision_recall_curve(y_true, y_probs)
+    f1 = 2 * precision * recall / (precision + recall + 1e-8)
+    best_idx = f1.argmax()
+    return thresholds[best_idx], precision[best_idx], recall[best_idx], f1[best_idx]
+
+
 
 def evaluate_metrics(opt, preds, target, epoch):
 
