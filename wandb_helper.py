@@ -8,6 +8,9 @@ def wandb_train_log(epoch, loss):
 def wandb_val_log(avg_loss, val_loss, **val_metrics):
     wandb.log({"train_loss": avg_loss, "val_loss": val_loss, **val_metrics})
 
+def wandb_test_log(**test_metrics):
+    wandb.log({**test_metrics})
+
 def wandb_login(opt):
     returnbool = False
 

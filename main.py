@@ -4,79 +4,24 @@ import os
 import torch
 import torch.cuda.amp as amp
 from torch import optim
-from torchinfo import summary
 from tqdm import tqdm
 
-import utils
-
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
-from model import melanoma_model
+from model import train_melanoma_model, test_melanoma_model
 from loss import melanoma_loss
-from utils import log_results, cuda_available, log_model, save_checkpoint, write_kaggle_csv
+from utils import log_results, cuda_available, log_model, save_checkpoint, write_kaggle_csv, \
+    soft_voting_probs_from_logits, log_test
 from metrics import evaluate_metrics
-from datetime import datetime
-from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log
-import wandb
-import numpy as np
-import matplotlib.pyplot as plt
+from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log, wandb_test_log
 
+
+#Uncomment to turn off wandb entirely for debugging only
 #wandb.init(mode="disabled")
 
-
-
-# TODO comments needed
-def denormalize_image(tensor, mean, std):
-
-    for t, m, s in zip(tensor, mean, std):
-        t.mul_(s).add_(m)
-    return tensor
-
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
-def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
-      
-    # Ensure the save directory exists
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
-
-    # Get one batch from the DataLoader. Assuming batch[0] contains the images.
-    batch = next(iter(loader))
-    images = batch[0]  # (B, C, H, W)
-
-    # Define the normalization parameters used in your transforms:
-    imagenet_mean = [0.485, 0.456, 0.406]
-    imagenet_std  = [0.229, 0.224, 0.225]
-
-    imgs_denorm = []
-    for i in range(num_samples):
-        img = images[i].clone().cpu()
-        img = denormalize_image(img, imagenet_mean, imagenet_std)
-        # Convert from (C, H, W) to (H, W, C)
-        img_np = img.permute(1, 2, 0).numpy()
-        # Clip values to [0, 1] for display purposes
-        img_np = np.clip(img_np, 0, 1)
-        imgs_denorm.append(img_np)
-
-    # Create a grid plot for the samples
-    fig, axes = plt.subplots(1, num_samples, figsize=(20, 5))
-    for idx, ax in enumerate(axes):
-        ax.imshow(imgs_denorm[idx])
-        ax.set_title(f"Sample {idx+1}")
-        ax.axis("off")
-    plt.suptitle("Augmented Samples")
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-
-    save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
-
-    # Save the figure to the unique file path
-    plt.savefig(save_path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Saved augmented samples to {save_path}")
-
-
+# Refactored the denorm image and save augmented samples method to be in utils.py
 
 class MelanomaTest:
-    def __init__(self, opt):
+    def __init__(self, opt, testmodel):
         self.opt = opt
         print(opt)
         self.device = cuda_available(self.opt)
@@ -84,7 +29,8 @@ class MelanomaTest:
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
         self.is_kfold = False
 
-        self.model = melanoma_model(opt).to(self.device)
+        self.model = test_melanoma_model(opt, testmodel).to(self.device)
+        self.model_path = testmodel
         self.criterion = melanoma_loss(opt).to(self.device)
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
 
@@ -118,12 +64,12 @@ class MelanomaTrainer:
             self.train_loader, self.val_loader = melanoma_train_dataloaders(opt)
             self.is_kfold = False
 
-        self.model = melanoma_model(opt).to(self.device)
+        self.model = train_melanoma_model(opt).to(self.device)
         self.criterion = melanoma_loss(opt).to(self.device)
         self.optimizer = self.get_optimizer()
         self.scheduler = self.get_scheduler()
         self.scaler = amp.GradScaler() if opt['training']['mixed_precision'] else None
-        self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
+        self.best_metrics = self.reset_metrics()
 
         '''if opt['training']['freeze_pretrained']:
             self.freeze_backbone(bool(opt['training']['freeze_pretrained']))
@@ -137,6 +83,8 @@ class MelanomaTrainer:
 
         log_model(self.opt, self.model)
 
+    def reset_metrics(self):
+        return {metric: float('-inf') for metric in self.opt['testing']['model_save_metrics']}
 
     def get_optimizer(self):
         if self.opt['training']['optimizer'] == 'adam':
@@ -171,20 +119,26 @@ def train(melanomamodel):
     print("Starting Training")
     wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
+    # We are going to return the paths to our best models for the test loop
+    testmodels = []
+
     if melanomamodel.is_kfold:
         for fold_data in melanomamodel.fold_loaders:
             fold_idx = fold_data['fold']
             print(f"\n[INFO] Starting Fold {fold_idx}")
 
             # Re-initialize the model for each fold (bassically a fresh start):
-            melanomamodel.model = melanoma_model(melanomamodel.opt).to(melanomamodel.device)
+            melanomamodel.model = train_melanoma_model(melanomamodel.opt).to(melanomamodel.device)
             melanomamodel.optimizer = melanomamodel.get_optimizer()
             melanomamodel.scheduler = melanomamodel.get_scheduler()
+            melanomamodel.best_metrics = melanomamodel.reset_metrics()      # Fixed for folds using past folds metrics for comparison.
 
             train_loader = fold_data['train_loader']
             val_loader   = fold_data['val_loader']
 
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
+
+            modeltokeep = None
 
             for epoch in range(melanomamodel.opt['training']['epochs']):
                 melanomamodel.model.train()
@@ -222,7 +176,14 @@ def train(melanomamodel):
                 wandb_val_log(avg_loss, val_loss, **val_metrics,)
 
                 # Save checkpoint for best model or last, etc.
-                save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
+                checkpointmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics, fold_idx)
+                if checkpointmodel is not None:
+                    modeltokeep = checkpointmodel
+
+            # Save the model for test for this fold
+            if modeltokeep is not None:
+                testmodels.append(modeltokeep)
+
 
     else:
         # Single train/val scenario
@@ -230,38 +191,42 @@ def train(melanomamodel):
         wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
         for epoch in range(melanomamodel.opt['training']['epochs']):
-          melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
-          melanomamodel.model.train()
-          total_loss = 0
+            melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
+            melanomamodel.model.train()
+            total_loss = 0
 
-          loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch + 1}/{melanomamodel.opt['training']['epochs']}")
+            loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch + 1}/{melanomamodel.opt['training']['epochs']}")
 
-          #If you want to see the images after Aug
-          # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
+            #If you want to see the images after Aug
+            # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
 
-          for images, labels in loop:
-              loss = train_batch(melanomamodel, images, labels)
+            for images, labels in loop:
+                loss = train_batch(melanomamodel, images, labels)
 
-              if melanomamodel.opt['training']['gradient_clipping']:
-                  torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
+                if melanomamodel.opt['training']['gradient_clipping']:
+                    torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
 
-              total_loss += loss.item()
-              loop.set_postfix(loss=loss.item())
+                total_loss += loss.item()
+                loop.set_postfix(loss=loss.item())
 
 
-          wandb_train_log(epoch+1, float(loss))
+            wandb_train_log(epoch+1, float(loss))
 
-          avg_loss = total_loss / len(melanomamodel.train_loader)
-          val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
+            avg_loss = total_loss / len(melanomamodel.train_loader)
+            val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
 
-          if melanomamodel.scheduler is not None:
-              melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
+            if melanomamodel.scheduler is not None:
+                melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
-          print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
 
-          wandb_val_log(avg_loss, val_loss, **val_metrics)
+            wandb_val_log(avg_loss, val_loss, **val_metrics)
 
-          save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
+            savedmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
+            if savedmodel is not None:
+                testmodels = [savedmodel]
+
+    return testmodels
 
 
 def train_batch(melanomamodel, images, labels):
@@ -288,55 +253,80 @@ def validate(melanomamodel, val_loader, epoch=1):
     melanomamodel.model.eval()
     total_loss = 0
 
+    # Refactored the loss loop to "validate_loss"
     with torch.no_grad():
-        loop = tqdm(val_loader, desc="[Val]")
-
-        firstitr = True
-        for images, labels in loop:
-            images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
-
-
-            outputs = melanomamodel.model(images)
-            loss = melanomamodel.criterion(outputs, labels.float())
-
-
-            total_loss += loss.item()
-
-            if firstitr:
-                all_outputs = outputs.cpu()
-                all_labels  = labels.cpu()
-                firstitr = False
-            else:
-                all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
-                all_labels  = torch.cat((all_labels, labels.cpu()), dim=0)
-
+        all_labels, all_outputs, total_loss = validate_loss(melanomamodel, total_loss, val_loader)
         avg_loss = total_loss / len(val_loader)
-        metrics = evaluate_metrics(melanomamodel.opt, all_outputs, all_labels, epoch+1)
+
+        # CONVERT OUTPUTS TO PROBS FOR METRICS
+        probabilities = torch.sigmoid(all_outputs)
+
+        metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch+1)
         log_results(melanomamodel.opt, metrics)
     return avg_loss, metrics
 
-def predict(melanomamodel, val_loader, epoch=1):
-    melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
-    melanomamodel.model.eval()
+# validation loss calc refactored out to be called from both "validate" and "test"
+def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
+    loop = tqdm(val_loader, desc=description)
+    firstitr = True
+    for images, labels in loop:
+        images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
 
-    with torch.no_grad():
-        loop = tqdm(val_loader, desc="[Val]")
+        outputs = melanomamodel.model(images)
+        loss = melanomamodel.criterion(outputs, labels.float())
 
-        firstitr = True
-        for images, labels in loop:
-            images, labels = images.to(melanomamodel.device), labels.to(melanomamodel.device)
+        total_loss += loss.item()
 
-            outputs = melanomamodel.model(images)
+        if firstitr:
+            all_outputs = outputs.cpu()
+            all_labels = labels.cpu()
+            firstitr = False
+        else:
+            all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
+            all_labels = torch.cat((all_labels, labels.cpu()), dim=0)
+    return all_labels, all_outputs, total_loss
 
-            if firstitr:
-                all_outputs = outputs.cpu()
-                firstitr = False
-            else:
-                all_outputs = torch.cat((all_outputs, outputs.cpu()), dim=0)
+# For post training / validation tests of saved models, or from command line.
+def test(opt, melanoma_model_list, val_loader):
 
-    write_kaggle_csv(melanomamodel.opt, val_loader.dataset.files, all_outputs.squeeze(1))
+    if melanoma_model_list is None or len(melanoma_model_list) == 0:
+        print("Test: No models to test. Exiting...")
+        return
 
+    predictonly = melanoma_model_list[0].predictmode        # True = we don't have class labels. False = we do and can mark our own homework
+    print("Test: Generate predictions only = {}".format(predictonly))
 
+    output_list = []
+
+    # Loop each model we want to generate predictions for. This supports both single models and cross-validation
+    for melanoma_test in melanoma_model_list:
+        print("Test: Model {}".format(melanoma_test.model_path))
+        melanoma_test.model = melanoma_test.model.to(melanoma_test.device)
+        melanoma_test.model.eval()
+
+        total_loss = 0
+        with torch.no_grad():
+            # TODO. For predictonly=True operations we don't need to calc loss or capture labels (they are all -1). But currently there is no detrimental effect reusing this call for simplicity/consistency of operation.
+            all_labels, all_outputs, total_loss = validate_loss(melanoma_test, total_loss, val_loader, description='[Test]')
+
+        # Safety check for tensor dimension
+        if all_outputs.dim() > 1 and all_outputs.shape[1] == 1:
+            all_outputs = all_outputs.squeeze(1)
+        # Safety check for tensor dimension
+        if all_labels.dim() > 1 and all_labels.shape[1] == 1:
+            all_labels = all_labels.squeeze(1)
+        output_list.append(all_outputs)
+
+    ensemble_logits = torch.stack(output_list, dim=0)
+    probabilities = soft_voting_probs_from_logits(ensemble_logits)  # Functions identically for non k-fold tests as it simply applies a mean to a dimension of 1. (i.e. no change)
+
+    # Only writing a kaggle csv if we have no labels
+    if predictonly:
+        write_kaggle_csv(opt, val_loader.dataset.files, probabilities)
+    else:
+        metrics = evaluate_metrics(opt, probabilities, all_labels, epoch='Test')
+        log_test(opt, metrics)
+        wandb_test_log(**metrics)
 
 def argument_parser():
     parser = argparse.ArgumentParser()
@@ -352,7 +342,7 @@ def argument_parser():
     opt['opt'] = args.opt
 
     if args.savedmodel:
-        opt['dataset']['savedmodel'] = args.savedmodel
+        opt['dataset']['savedmodel'] = [args.savedmodel]
     else:
         opt['dataset']['savedmodel'] = None
     if args.testcsv:
@@ -362,24 +352,25 @@ def argument_parser():
 
 def main():
     opt = argument_parser()
+    testmodels = opt['dataset']['savedmodel']   # testmodels is a list of saved model paths. Multiple models (e.g. k-fold) will trigger prediction voting in test
 
-    if opt['dataset']['savedmodel']:
-        print(opt['dataset']['savedmodel'])
-        print(opt['dataset']['dataset_test_csv'])
-
-        melanomamodel = MelanomaTest(opt)
-
-        # predict only? This happens when our test file does not have labels
-        if melanomamodel.predictmode:
-            print("PREDICT MODEL MODE")
-            predict(melanomamodel, melanomamodel.val_loader, 1)
-        else:
-            print("TEST MODEL MODE")
-            validate(melanomamodel, melanomamodel.val_loader, 1)
-    else:
+    # Check to see if we should train first
+    if testmodels is None or len(testmodels) == 0:           # Train because we don't have a model to test against
         print("TRAIN MODEL MODE")
         melanomamodel = MelanomaTrainer(opt)
-        train(melanomamodel)
+        testmodels = train(melanomamodel)
+
+        if testmodels is None or len(testmodels) == 0:
+            print("Training complete. No Saved Model. Exiting.")
+            return          # Nothing to test
+
+    # Test Loop begins
+    melanomatests = []
+    for model in testmodels:
+        melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
+
+    # When calling our test method we force all models to use the same data loader (nominally from the first one)
+    test(opt, melanomatests, melanomatests[0].val_loader)
 
 if __name__ == "__main__":
     main()

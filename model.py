@@ -129,12 +129,16 @@ class MelanomaModel(nn.Module):
             return self.backbone(x).squeeze(-1)
 
 
-def melanoma_model(opt):
+def test_melanoma_model(opt, testmodel):
 
     model = MelanomaModel(opt)
 
-    if opt['dataset']['savedmodel'] is not None:
-        print('Loading saved model: ', opt['dataset']['savedmodel'])
-        model.load_state_dict(torch.load(opt['dataset']['savedmodel']))
+    if testmodel is not None:
+        print('Loading saved model: ', testmodel)
+        model.load_state_dict(torch.load(testmodel))
 
+    return model
+
+def train_melanoma_model(opt):
+    model = MelanomaModel(opt)
     return model

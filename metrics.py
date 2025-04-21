@@ -25,14 +25,43 @@ def find_best_threshold(y_true, y_probs):
     return thresholds[best_idx], precision[best_idx], recall[best_idx], f1[best_idx]
 
 
+# WARNING: LOGITS, PROBABILITIES AND PREDICTIONS ARE NOT THE SAME THING.
+# LOGITS: Raw loss
+# PROBS: Sigmoid activated probability from loss, resulting in float between 0 and 1.
+# PREDS: A hard 0 or 1, effectively thresholded PROBS.
+#
+# evaluate_metrics now expects probs, not logits. BUT WHY?
+# ... torchmetrics can use both logits and probs
+# ... ensemble voting of multiple models needs to be done on probabilities (or preds) as so the input from these CANT be logits
+# ... so we go with the lowest common denominator for all of our test choices. Which is probabilities.
+#
 
-def evaluate_metrics(opt, preds, target, epoch):
+def evaluate_metrics(opt, probs, target, epoch):
+
+    valdict = {'auc':'AUC','accuracy':'Accuracy', 'precision':'Precision', 'recall':'Recall', 'f1':'F1 Score', 'ap':'Average Precision', 'map':'mAP'}
+    testdict = {'auc':'T_AUC','accuracy':'T_Accuracy', 'precision':'T_Precision', 'recall':'T_Recall', 'f1':'T_F1 Score', 'ap':'T_Average Precision', 'map':'T_mAP'}
+
+    # Helps separate results in wandb and log to a separate test log file
+    if epoch == 'Test':
+        rundict = testdict.copy()
+    else:
+        rundict = valdict.copy()
+
+    # Check we likely have probabilities rather than logits. Safety check.
+    if not ((probs >= 0 - 1e-6).all() and (probs <= 1 + 1e-6).all()):
+        print("-------")
+        print("WARNING: Evaluation Metrics may have been passed logits rather than probabilities.")
+        print("min:", probs.min().item())
+        print("max:", probs.max().item())
+        print("mean:", probs.mean().item())
+        print("std:", probs.std().item())
+        print("-------")
 
     results = {}
     classlabels = ["Benign", "Malignant"]
 
     # Convert probabilities to binary predictions using a threshold of 0.5.
-    preds_binary = (preds > 0.5).int()
+    preds_binary = (probs > 0.5).int()
     target_int = target.int()
 
     # Retrieve the list of metrics to compute from your configuration.
@@ -44,28 +73,28 @@ def evaluate_metrics(opt, preds, target, epoch):
     for metric in config_metrics:
         metric_lower = metric.lower()
         if metric_lower == 'auc':
-            results['AUC'] = round(to_scalar(binary_auroc(preds, target, thresholds=None)),4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_auroc(probs, target, thresholds=None)), 4)
         elif metric_lower == 'accuracy':
-            results['Accuracy'] = round(to_scalar(binary_accuracy(preds, target, threshold=0.5)),4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_accuracy(probs, target, threshold=0.5)), 4)
         elif metric_lower == 'precision':
-            results['Precision'] = round(to_scalar(binary_precision(preds, target, threshold=0.5)),4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_precision(probs, target, threshold=0.5)), 4)
         elif metric_lower == 'recall':
-            results['Recall'] = round(to_scalar(binary_recall(preds, target, threshold=0.5)),4)
-        elif metric_lower in ['f1', 'f1 score']:
-            results['F1 Score'] = round(to_scalar(binary_f1_score(preds, target, threshold=0.5)),4)
-        elif metric_lower in ['average precision', 'ap']:
-            results['Average Precision'] = round(to_scalar(binary_average_precision(preds, target)),4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_recall(probs, target, threshold=0.5)), 4)
+        elif metric_lower == 'f1':
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_f1_score(probs, target, threshold=0.5)), 4)
+        elif metric_lower == 'ap':
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_average_precision(probs, target)), 4)
         elif metric_lower == 'map':
-            results['mAP'] = average_precision_score(target_int.numpy(), preds.numpy())
-        elif metric_lower in ['confusion matrix', 'cm']:
+            results[rundict.get(metric_lower, metric_lower)] = average_precision_score(target_int.numpy(), probs.numpy())
+        elif metric_lower =='cm':
             cm = confusion_matrix(target_int.numpy(), preds_binary.numpy())
-            results["Confusion Matrix - Epoch: " + str(epoch)] = cm
+            results[rundict.get(metric_lower, metric_lower) + " - Epoch: " + str(epoch)] = cm
 
             # TODO break out wandb and local display of CMs. Also save CM as part of logging rather than plot them
             wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
             #visualize_confusion_matrix(cm, classlabels, "Confusion Matrix - Epoch: " + str(epoch))
         elif metric_lower == 'roc':
-            fpr, tpr, roc_thresholds = roc_curve(target_int.numpy(), preds.numpy())
+            fpr, tpr, roc_thresholds = roc_curve(target_int.numpy(), probs.numpy())
             roc_auc_val = auc(fpr, tpr)
             results['ROC'] = {
                 'fpr': fpr,
