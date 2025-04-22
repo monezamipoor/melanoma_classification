@@ -119,7 +119,17 @@ def train(melanomamodel):
     print("Starting Training")
     wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
-    # We are going to return the paths to our best models for the test loop
+    '''
+    #debug layer freezing
+    for name, param in melanomamodel.model.named_parameters():
+        if not param.requires_grad:
+            print(f"Layer {name} is frozen.")
+        else:
+            print(f"Layer {name} is trainable.")
+    # end debug
+    '''
+
+    #We are going to return the paths to our best models for the test loop
     testmodels = []
 
     if melanomamodel.is_kfold:
@@ -327,6 +337,7 @@ def test(opt, melanoma_model_list, val_loader):
         metrics = evaluate_metrics(opt, probabilities, all_labels, epoch='Test')
         log_test(opt, metrics)
         wandb_test_log(**metrics)
+        print(f"Test Metrics: {metrics}")
 
 def argument_parser():
     parser = argparse.ArgumentParser()
