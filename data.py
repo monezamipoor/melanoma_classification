@@ -22,7 +22,7 @@ except ImportError:
 
 import utils
 
-
+# Creating ColumnMix Augmentation which creates an image consisted of four stripes from four images
 def column_mix(img1, img2, img3, img4):
     w, h = img1.size
     mixed = Image.new("RGB", (w, h))
@@ -37,6 +37,7 @@ def column_mix(img1, img2, img3, img4):
     mixed.paste(col4, (3 * strip_width, 0))
     return mixed
 
+# Creating QuadrantMix Augmentation which creates mosaics of four images in a grid
 class QuadrantMixTransform:
     def __init__(self, mix_prob, root, files):
         self.mix_prob = mix_prob
@@ -70,7 +71,7 @@ class AddGaussianNoise:
 
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms_tuple=None, subset=1.0):
+    def __init__(self, opt, mode, root, files, classes, transforms_tuple=None):
         """
         Args:
             opt (dict): Options dictionary.
@@ -85,8 +86,9 @@ class MelanomaDataset(Dataset):
         self.mode = mode
         self.root = root
         
-        if subset < 1.0:
-            num_samples = int(len(files) * subset)
+        # Selecting a subset of data. For quick debugging purposes.
+        if self.opt['dataset']['subset'] < 1.0:
+            num_samples = int(len(files) * self.opt['dataset']['subset'])
             self.files = files[:num_samples]
             self.classes = classes[:num_samples]
         else:
@@ -327,8 +329,7 @@ def melanoma_test_dataloaders(opt):
     test_dataset = MelanomaDataset(
         opt,
         'val',
-        opt['dataset']['dataset_test_path'], files, classes,
-        subset=1
+        opt['dataset']['dataset_test_path'], files, classes
     )
 
     test_loader = DataLoader(
