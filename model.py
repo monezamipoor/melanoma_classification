@@ -2,7 +2,6 @@ import torch
 import torch.nn as nn
 import timm
 
-
 class MelanomaModel(nn.Module):
     def __init__(self, opt):
         super(MelanomaModel, self).__init__()
@@ -20,27 +19,15 @@ class MelanomaModel(nn.Module):
             self.backbone = timm.create_model(backbone_name, pretrained=pretrained, num_classes=0)
             feature_dim = self.backbone.num_features
             self.classifier = nn.Sequential(
-
                 nn.Dropout(dropout_rate),
                 nn.Linear(feature_dim, opt['model']['output_neurons'])  # Output shape: [B, 1]
             )
-
-        elif "efficientnet" in backbone_name.lower():
-            self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
-
-            # EfficientNet uses .classifier as its final layer
-
-            feature_dim = self.backbone.classifier.in_features
-            self.backbone.classifier = nn.Sequential(
-                nn.Dropout(dropout_rate),
-                nn.Linear(feature_dim, opt['model']['output_neurons'])
-            )
-            self.classifier = None
         else:
             self.backbone = timm.create_model(backbone_name, pretrained=pretrained)
-
+            # Unified approach: Check common classifier head attributes
             if hasattr(self.backbone, 'fc'):
-                feature_dim = self.backbone.num_features
+                # Case: Some models (e.g., ResNet) have 'fc'
+                feature_dim = self.backbone.fc.in_features
                 if hasattr(self.backbone, 'global_pool'):
                     self.backbone.global_pool = nn.AdaptiveAvgPool2d(1)
                 self.backbone.fc = nn.Sequential(
@@ -48,8 +35,9 @@ class MelanomaModel(nn.Module):
                     nn.Dropout(dropout_rate),
                     nn.Linear(feature_dim, opt['model']['output_neurons'])
                 )
-                self.classifier = None
+                self.classifier = None  # Head is included in backbone.
             elif hasattr(self.backbone, 'head'):
+                # Case: Some models have a 'head' attribute
                 feature_dim = self.backbone.head.in_features
                 self.backbone.head = nn.Sequential(
                     nn.AdaptiveAvgPool2d((1, 1)),
@@ -59,16 +47,15 @@ class MelanomaModel(nn.Module):
                 )
                 self.classifier = None
             elif hasattr(self.backbone, 'classifier'):
+                # Case: Models like EfficientNet store their final layer in 'classifier'
                 feature_dim = self.backbone.classifier.in_features
                 self.backbone.classifier = nn.Sequential(
-                    nn.AdaptiveAvgPool2d((1, 1)),
-                    nn.Flatten(),
                     nn.Dropout(dropout_rate),
                     nn.Linear(feature_dim, opt['model']['output_neurons'])
                 )
                 self.classifier = None
             else:
-                raise ValueError("Unsupported backbone structure: no classifier head found.")
+                raise ValueError("Unsupported backbone structure: no recognized classifier head attribute found.")
 
         if self.freeze_backbone:
             self.freeze_layers()
@@ -83,7 +70,7 @@ class MelanomaModel(nn.Module):
             for param in self.backbone.parameters():
                 param.requires_grad = False
 
-            # Detect classifier
+            # Find the classifier head among the common attributes.
             classifier = getattr(self.backbone, 'fc', None) or \
                          getattr(self.backbone, 'head', None) or \
                          getattr(self.backbone, 'classifier', None)
@@ -113,8 +100,7 @@ class MelanomaModel(nn.Module):
             features = self.backbone.forward_features(x)  # shape: [B, H, W, C]
 
             if features.ndim == 4:
-                # [B, H, W, C] → [B, C, H, W] for pooling
-                features = features.permute(0, 3, 1, 2)         # [B, C, H, W]
+                features = features.permute(0, 3, 1, 2)  # [B, C, H, W]
                 features = torch.nn.functional.adaptive_avg_pool2d(features, 1)  # [B, C, 1, 1]
                 features = features.view(features.size(0), -1)  # [B, C]
             elif features.ndim == 3:
@@ -128,13 +114,9 @@ class MelanomaModel(nn.Module):
         else:
             return self.backbone(x).squeeze(-1)
 
-
 def melanoma_model(opt):
-
     model = MelanomaModel(opt)
-
     if opt['dataset']['savedmodel'] is not None:
         print('Loading saved model: ', opt['dataset']['savedmodel'])
         model.load_state_dict(torch.load(opt['dataset']['savedmodel']))
-
     return model
