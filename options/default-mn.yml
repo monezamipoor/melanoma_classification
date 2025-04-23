@@ -35,6 +35,7 @@ dataset:
   # k_fold_validation: 5 # Options: k, none
   # test: false # Include test dataset as well or only train and validation
   # add_metadata: false # adding or removing metadata
+  subset: 1.0
 
 # Model Arguments
 model:

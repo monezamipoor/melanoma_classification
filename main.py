@@ -7,7 +7,6 @@ from torch import optim
 from tqdm import tqdm
 
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
-# from debug import print_batch_label_dist, print_raw_logits_and_probs
 from model import train_melanoma_model, test_melanoma_model
 from model_hybrid import train_hybrid_model, test_hybrid_model
 from loss import melanoma_loss
