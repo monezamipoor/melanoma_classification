@@ -18,7 +18,7 @@ dataset:
   #stratified_batching: true  # For maintaining class distribution in batches
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
-  dataset_train_csv: "../data/train-0-11.csv"
+  dataset_train_csv: "./data/train-0-11.csv"
   dataset_val_path: "/content/Melanoma/train"
 
   # kaggle test set
@@ -27,7 +27,7 @@ dataset:
 
   # labelled-test
   #dataset_test_csv: "data/test-12-14.csv"
-  dataset_test_csv: "../data/test-12-14.csv"
+  dataset_test_csv: "./data/test-12-14.csv"
   dataset_test_path: "/content/Melanoma/train"
 
   batch_size: 32

@@ -64,12 +64,13 @@ class MelanomaDataset(Dataset):
         self.root = root
         
         # Selecting a subset of data. For quick debugging purposes.
-        num_samples = int(len(files) * self.opt['dataset']['subset'])
-        _, subset_files_classes = train_test_split( 
-            list(zip(files, classes)), train_size=num_samples, stratify=classes, random_state=42 )
-        self.files, self.classes = zip(*subset_files_classes)
-        self.files = list(self.files)
-        self.classes = list(self.classes)
+        if self.opt['dataset']['subset'] < 1.0:
+            num_samples = int(len(files) * self.opt['dataset']['subset'])
+            self.files = files[:num_samples]
+            self.classes = classes[:num_samples]
+        else:
+            self.files = files
+            self.classes = classes
 
         # Build transforms for base and additional augmentations for class 1.
         if transforms_tuple is None:
