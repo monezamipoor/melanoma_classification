@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 
+import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
 
 from PIL import Image
@@ -11,6 +12,13 @@ import numpy as np
 import pandas as pd
 import random
 from torchvision.transforms.functional import InterpolationMode
+from torchvision.transforms import RandomErasing
+try:
+    from torchvision.transforms import ElasticTransform
+except ImportError:
+    ElasticTransform = None  
+
+
 
 import utils
 
@@ -47,6 +55,20 @@ class QuadrantMixTransform:
             img4 = Image.open(os.path.join(self.root, self.files[indices[3]])).convert("RGB").resize(target_size)
             return column_mix(img1, img2, img3, img4)
         return img
+
+class AddGaussianNoise:
+    def __init__(self, mean=0.0, std=1.0):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError("AddGaussianNoise expects a tensor input")
+        return tensor + torch.randn_like(tensor) * self.std + self.mean
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(mean={self.mean}, std={self.std})"
+
 
 class MelanomaDataset(Dataset):
     def __init__(self, opt, mode, root, files, classes, transforms_tuple=None):
@@ -98,19 +120,28 @@ class MelanomaDataset(Dataset):
         return len(self.files)
 
     def build_transforms(self):
-        # Base transforms applied to every sample (resize, to-tensor, normalization).
-        base_transforms = [transforms.Resize(self.opt['dataset']['image_size'])]
-        base_transforms.extend([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406],
-                                 [0.229, 0.224, 0.225])
-        ])
+        # Get augmentation options
+        aug = self.opt['dataset'].get('augmentations', {})
+
+        # --- Base transforms applied to ALL samples (after any class-specific augmentations) ---
+        base_transforms = [
+            transforms.Resize(self.opt['dataset']['image_size']),
+            transforms.ToTensor()
+        ]
+
+        # Tensor-level augmentations (must happen AFTER ToTensor)
+        if aug.get('gaussian_noise', 0) > 0:
+            base_transforms.append(AddGaussianNoise(0.0, aug['gaussian_noise']))
+        if aug.get('random_erasing', 0) > 0:
+            base_transforms.append(transforms.RandomErasing(p=aug['random_erasing'], value='random'))
+
+        base_transforms.append(transforms.Normalize([0.485, 0.456, 0.406],
+                                                    [0.229, 0.224, 0.225]))
         base_transforms = transforms.Compose(base_transforms)
 
-        # Additional augmentation for class 1 applied only in training mode.
+        # --- Class 1 augmentations (before ToTensor, only for class 1 in training) ---
         class1_transforms_list = []
         if self.mode == "train":
-            aug = self.opt['dataset'].get('augmentations', {})
 
             if aug.get('horizontal_flip', 0) > 0:
                 class1_transforms_list.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
@@ -125,19 +156,22 @@ class MelanomaDataset(Dataset):
             if aug.get('random_shear', 0) > 0:
                 class1_transforms_list.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255,255,255)))
             if aug.get('shift_vertical', None) is not None:
-                vertical_shift = aug['shift_vertical']
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255,255,255)))
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(0, aug['shift_vertical']), fill=(255,255,255)))
+            if aug.get('shift_horizontal', None) is not None:
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(aug['shift_horizontal'], 0), fill=(255,255,255)))
+            if aug.get('random_zoom', None):
+                zmin, zmax = aug['random_zoom']
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, scale=(zmin, zmax), fill=(255,255,255)))
             if aug.get('color_jitter', 0) > 0:
                 cj_value = aug['color_jitter']
-                class1_transforms_list.append(transforms.ColorJitter(brightness=cj_value,
-                                                                     contrast=cj_value,
-                                                                     saturation=cj_value))
+                class1_transforms_list.append(transforms.ColorJitter(brightness=cj_value, contrast=cj_value, saturation=cj_value))
+            if aug.get('elastic_transform', False) and ElasticTransform is not None:
+                class1_transforms_list.append(ElasticTransform(alpha=50.0))
             if aug.get('image_mix_enabled', False):
                 mix_prob = aug.get('image_mix_prob', 1.0)
                 class1_transforms_list.append(QuadrantMixTransform(mix_prob, self.root, self.files))
-            
-        # If there are no extra augmentations defined, we can set to None.
-        class1_transforms = transforms.Compose(class1_transforms_list) if len(class1_transforms_list) > 0 else None
+
+        class1_transforms = transforms.Compose(class1_transforms_list) if class1_transforms_list else None
 
         return base_transforms, class1_transforms
 
