@@ -14,6 +14,8 @@ from torchmetrics.functional.classification import (
     binary_average_precision,
     binary_confusion_matrix
 )
+
+from debug import threshold_eval_metrics
 from wandb_helper import wandb_log_cm
 
 
@@ -37,6 +39,11 @@ def find_best_threshold(y_true, y_probs):
 #
 
 def evaluate_metrics(opt, probs, target, epoch):
+
+    #debug - Uncomment to show spread of probs in debug
+    #threshold_eval_metrics(probs, target)
+    #end debug
+
 
     valdict = {'auc':'AUC','accuracy':'Accuracy', 'precision':'Precision', 'recall':'Recall', 'f1':'F1 Score', 'ap':'Average Precision', 'map':'mAP'}
     testdict = {'auc':'T_AUC','accuracy':'T_Accuracy', 'precision':'T_Precision', 'recall':'T_Recall', 'f1':'T_F1 Score', 'ap':'T_Average Precision', 'map':'T_mAP'}

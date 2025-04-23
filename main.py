@@ -7,7 +7,9 @@ from torch import optim
 from tqdm import tqdm
 
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
+from debug import print_batch_label_dist, print_raw_logits_and_probs
 from model import train_melanoma_model, test_melanoma_model
+from model_hybrid import train_hybrid_model, test_hybrid_model
 from loss import melanoma_loss
 from utils import log_results, cuda_available, log_model, save_checkpoint, write_kaggle_csv, \
     soft_voting_probs_from_logits, log_test
@@ -29,7 +31,12 @@ class MelanomaTest:
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
         self.is_kfold = False
 
-        self.model = test_melanoma_model(opt, testmodel).to(self.device)
+        if opt['model']['hybrid'].get('enabled', False):            # Use the hybrid model config
+            self.model = test_hybrid_model(opt, testmodel).to(self.device)
+            print("Using Hybrid Model")
+        else:                                                       # Use the basic model config
+            self.model = test_melanoma_model(opt, testmodel).to(self.device)
+
         self.model_path = testmodel
         self.criterion = melanoma_loss(opt).to(self.device)
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
@@ -44,6 +51,7 @@ class MelanomaTrainer:
         self.opt = opt
         print(opt)
         self.device = cuda_available(self.opt)
+
         # K-Fold 
         if opt['dataset'].get('use_groupkfold', False):
             # Expecting that melanoma_dataloaders() returns a list of dicts for each fold
@@ -62,10 +70,16 @@ class MelanomaTrainer:
             self.is_kfold = True
         else:
             self.train_loader, self.val_loader = melanoma_train_dataloaders(opt)
+            #print_batch_label_dist(self.train_loader)
             self.is_kfold = False
 
-        self.model = train_melanoma_model(opt).to(self.device)
-        self.criterion = melanoma_loss(opt).to(self.device)
+        if opt['model']['hybrid'].get('enabled', False):            # Use the hybrid model config
+            print("Using Hybrid Model")
+            self.model = train_hybrid_model(opt).to(self.device)
+        else:                                                       # Use the basic model config
+            self.model = train_melanoma_model(opt).to(self.device)
+
+        self.criterion = melanoma_loss(opt, self.train_loader).to(self.device)
         self.optimizer = self.get_optimizer()
         self.scheduler = self.get_scheduler()
         self.scaler = amp.GradScaler() if opt['training']['mixed_precision'] else None
@@ -273,6 +287,9 @@ def validate(melanomamodel, val_loader, epoch=1):
 
         metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch+1)
         log_results(melanomamodel.opt, metrics)
+
+        print_raw_logits_and_probs(all_labels, all_outputs)
+
     return avg_loss, metrics
 
 # validation loss calc refactored out to be called from both "validate" and "test"
@@ -342,7 +359,7 @@ def test(opt, melanoma_model_list, val_loader):
 def argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
-    parser.add_argument("-s", "--savedmodel", type=str, required=False, help="the model file to test")
+    parser.add_argument("-s", "--savedmodel", type=str, required=False, help="the model file to test", nargs='+')
     parser.add_argument("-t", "--testcsv", type=str, required=False, help="the csv file to test")
     args = parser.parse_args()
 
@@ -353,7 +370,7 @@ def argument_parser():
     opt['opt'] = args.opt
 
     if args.savedmodel:
-        opt['dataset']['savedmodel'] = [args.savedmodel]
+        opt['dataset']['savedmodel'] = args.savedmodel
     else:
         opt['dataset']['savedmodel'] = None
     if args.testcsv:
