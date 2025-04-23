@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 import timm
 
-from main import argument_parser
 from model import MelanomaModel
 from utils import log_model
 
+## WORK IN PROGRESS MODEL FOR CNN >> TRANSFORMER ARCHITECTURE
+## NOTE YET FULLY USABLE
+## JAMES
 
 class HybridModel(MelanomaModel):
     def __init__(self, opt):
@@ -77,8 +79,23 @@ class HybridModel(MelanomaModel):
         transformed = self.transformer(tokens)  # [B, H*W, embed_dim]
 
         transformed = transformed.transpose(1, 2)  # [B, embed_dim, H*W]
-        out = self.classifier(transformed)  # [B, 1]
+        logits = self.classifier(transformed)  # [B, 1]
+        out = logits.squeeze(1)
         return out
+
+def test_hybrid_model(opt, testmodel):
+
+    model = HybridModel(opt)
+
+    if testmodel is not None:
+        print('Loading saved model: ', testmodel)
+        model.load_state_dict(torch.load(testmodel))
+
+    return model
+
+def train_hybrid_model(opt):
+    model = HybridModel(opt)
+    return model
 
 if __name__ == '__main__':
     # Example usage
