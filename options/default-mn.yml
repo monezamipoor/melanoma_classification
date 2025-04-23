@@ -15,10 +15,7 @@ dataset:
     image_mix_prob: 0.2
     #random_shear: 20
     #shift_vertical: 0.2
-    elastic_deformation: True    # Set to true to apply elastic distortions
-    random_occlusion: True     # Set to true to apply random erasing
-    random_blur: True        # Set to true to apply Gaussian blur
-    random_noise: True           # Set to true to add Gaussian noise
+
   #stratified_batching: true  # For maintaining class distribution in batches
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"

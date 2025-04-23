@@ -11,7 +11,6 @@ import numpy as np
 import pandas as pd
 import random
 from torchvision.transforms.functional import InterpolationMode
-from torchvision.transforms.v2 import ElasticTransform
 
 import utils
 
@@ -136,14 +135,6 @@ class MelanomaDataset(Dataset):
             if aug.get('image_mix_enabled', False):
                 mix_prob = aug.get('image_mix_prob', 1.0)
                 class1_transforms_list.append(QuadrantMixTransform(mix_prob, self.root, self.files))
-                if aug.get('elastic_deformation', False):
-                    class1_transforms_list.append(ElasticTransform(alpha=50.0, sigma=5.0))  # You can tweak these
-
-                if aug.get('random_occlusion', False):
-                    class1_transforms_list.append(transforms.RandomErasing(p=1.0, scale=(0.02, 0.33), ratio=(0.3, 3.3), value='random'))
-
-                if aug.get('random_blur', False):
-                    class1_transforms_list.append(transforms.GaussianBlur(kernel_size=3, sigma=(0.1, 2.0)))
             
         # If there are no extra augmentations defined, we can set to None.
         class1_transforms = transforms.Compose(class1_transforms_list) if len(class1_transforms_list) > 0 else None
