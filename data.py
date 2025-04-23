@@ -16,7 +16,7 @@ from torchvision.transforms import RandomErasing
 try:
     from torchvision.transforms import ElasticTransform
 except ImportError:
-    ElasticTransform = None  
+    ElasticTransform = None 
 
 
 
