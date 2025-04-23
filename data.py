@@ -4,6 +4,7 @@ from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
 
+import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
 
 from PIL import Image
@@ -11,6 +12,13 @@ import numpy as np
 import pandas as pd
 import random
 from torchvision.transforms.functional import InterpolationMode
+from torchvision.transforms import RandomErasing
+try:
+    from torchvision.transforms import ElasticTransform
+except ImportError:
+    ElasticTransform = None  
+
+
 
 import utils
 
@@ -46,6 +54,20 @@ class QuadrantMixTransform:
             img4 = Image.open(os.path.join(self.root, self.files[indices[3]])).convert("RGB").resize(target_size)
             return column_mix(img1, img2, img3, img4)
         return img
+
+class AddGaussianNoise:
+    def __init__(self, mean=0.0, std=1.0):
+        self.mean = mean
+        self.std = std
+
+    def __call__(self, tensor):
+        if not isinstance(tensor, torch.Tensor):
+            raise TypeError("AddGaussianNoise expects a tensor input")
+        return tensor + torch.randn_like(tensor) * self.std + self.mean
+
+    def __repr__(self):
+        return f"{self.__class__.__name__}(mean={self.mean}, std={self.std})"
+
 
 class MelanomaDataset(Dataset):
     def __init__(self, opt, mode, root, files, classes, transforms_tuple=None, subset=1.0):
@@ -96,19 +118,28 @@ class MelanomaDataset(Dataset):
         return len(self.files)
 
     def build_transforms(self):
-        # Base transforms applied to every sample (resize, to-tensor, normalization).
-        base_transforms = [transforms.Resize(self.opt['dataset']['image_size'])]
-        base_transforms.extend([
-            transforms.ToTensor(),
-            transforms.Normalize([0.485, 0.456, 0.406],
-                                 [0.229, 0.224, 0.225])
-        ])
+        # Get augmentation options
+        aug = self.opt['dataset'].get('augmentations', {})
+
+        # --- Base transforms applied to ALL samples (after any class-specific augmentations) ---
+        base_transforms = [
+            transforms.Resize(self.opt['dataset']['image_size']),
+            transforms.ToTensor()
+        ]
+
+        # Tensor-level augmentations (must happen AFTER ToTensor)
+        if aug.get('gaussian_noise', 0) > 0:
+            base_transforms.append(AddGaussianNoise(0.0, aug['gaussian_noise']))
+        if aug.get('random_erasing', 0) > 0:
+            base_transforms.append(transforms.RandomErasing(p=aug['random_erasing'], value='random'))
+
+        base_transforms.append(transforms.Normalize([0.485, 0.456, 0.406],
+                                                    [0.229, 0.224, 0.225]))
         base_transforms = transforms.Compose(base_transforms)
 
-        # Additional augmentation for class 1 applied only in training mode.
+        # --- Class 1 augmentations (before ToTensor, only for class 1 in training) ---
         class1_transforms_list = []
         if self.mode == "train":
-            aug = self.opt['dataset'].get('augmentations', {})
 
             if aug.get('horizontal_flip', 0) > 0:
                 class1_transforms_list.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
@@ -123,18 +154,22 @@ class MelanomaDataset(Dataset):
             if aug.get('random_shear', 0) > 0:
                 class1_transforms_list.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255,255,255)))
             if aug.get('shift_vertical', None) is not None:
-                vertical_shift = aug['shift_vertical']
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(0, vertical_shift), fill=(255,255,255)))
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(0, aug['shift_vertical']), fill=(255,255,255)))
+            if aug.get('shift_horizontal', None) is not None:
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(aug['shift_horizontal'], 0), fill=(255,255,255)))
+            if aug.get('random_zoom', None):
+                zmin, zmax = aug['random_zoom']
+                class1_transforms_list.append(transforms.RandomAffine(degrees=0, scale=(zmin, zmax), fill=(255,255,255)))
             if aug.get('color_jitter', 0) > 0:
                 cj_value = aug['color_jitter']
-                class1_transforms_list.append(transforms.ColorJitter(brightness=cj_value,
-                                                                     contrast=cj_value,
-                                                                     saturation=cj_value))
+                class1_transforms_list.append(transforms.ColorJitter(brightness=cj_value, contrast=cj_value, saturation=cj_value))
+            if aug.get('elastic_transform', False) and ElasticTransform is not None:
+                class1_transforms_list.append(ElasticTransform(alpha=50.0))
             if aug.get('image_mix_enabled', False):
                 mix_prob = aug.get('image_mix_prob', 1.0)
                 class1_transforms_list.append(QuadrantMixTransform(mix_prob, self.root, self.files))
-        # If there are no extra augmentations defined, we can set to None.
-        class1_transforms = transforms.Compose(class1_transforms_list) if len(class1_transforms_list) > 0 else None
+
+        class1_transforms = transforms.Compose(class1_transforms_list) if class1_transforms_list else None
 
         return base_transforms, class1_transforms
 
@@ -221,19 +256,27 @@ def melanoma_train_dataloaders(opt):
                 oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
                 print("Applying upsampling to the training set for fold", fold, "with rate", oversampling_rate)
                 train_files_fold, train_classes_fold = up_sampling(train_files_fold, train_classes_fold, oversampling_rate)
+
             train_dataset_fold = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'],
                                                   train_files_fold, train_classes_fold)
             val_dataset_fold = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'],
                                                 val_files_fold, val_classes_fold)
+
             train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'],
-                                           shuffle=True, num_workers=4)
+                                           shuffle=True, num_workers=2)
             val_loader_fold = DataLoader(val_dataset_fold, batch_size=opt['dataset']['batch_size'],
-                                         shuffle=False, num_workers=4)
+                                         shuffle=False, num_workers=2)
             fold_loaders.append({
                 'fold': fold,
                 'train_loader': train_loader_fold,
                 'val_loader': val_loader_fold
             })
+
+            print("Fold ", str(fold), " Train Balance:")
+            utils.check_dataset_balance(train_dataset_fold)
+            print("Fold ", str(fold), " Val Balance:")
+            utils.check_dataset_balance(val_dataset_fold)
+
         return fold_loaders
     else:
         train_files, val_files, train_classes, val_classes = train_test_split(
@@ -252,9 +295,15 @@ def melanoma_train_dataloaders(opt):
         train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
         train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'],
-                                  shuffle=True, num_workers=4)
+                                  shuffle=True, num_workers=2)
         val_loader = DataLoader(val_dataset, batch_size=opt['dataset']['batch_size'],
-                                shuffle=False, num_workers=4)
+                                shuffle=False, num_workers=2)
+
+        print("Train Balance:")
+        utils.check_dataset_balance(train_dataset)
+        print("Val Balance:")
+        utils.check_dataset_balance(val_dataset)
+
         return train_loader, val_loader
 
 
@@ -269,7 +318,7 @@ def melanoma_test_dataloaders(opt):
     else:
         classes = dataset['target'].values
 
-    # if we are missing labels we need to tell the main loop that we can't predict
+    # if we are missing labels we need to tell the main loop that we can't evaluate our own predictions
     if np.min(classes) < 0:
         predictmode = True
     else:
@@ -279,7 +328,6 @@ def melanoma_test_dataloaders(opt):
         opt,
         'val',
         opt['dataset']['dataset_test_path'], files, classes,
-        transforms=None,  # TODO Could drop this if transforms are being handled via config.
         subset=1
     )
 
@@ -291,137 +339,4 @@ def melanoma_test_dataloaders(opt):
     )
 
     return predictmode, test_loader
-
-
-# def melanoma_train_dataloaders(opt):
-
-#     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
-
-#     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
-#     classes = dataset['target'].values                  # Target classes (0 = benign, 1 = malignant)
-
-#     if opt['dataset'].get('use_groupkfold', False):
-#       # Split the train and test datasets by group (e.g., tfrecord values)
-#       test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
-#       train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
-#       oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
-#       all_train_files = train_dataset['image_name'].values + '.jpg'
-#       all_train_classes = train_dataset['target'].values
-#       all_groups = train_dataset['tfrecord'].values
-
-#       n_splits = opt['dataset'].get('n_splits', 3)
-#       group_kfold = GroupKFold(n_splits=n_splits)
-
-#       fold_loaders = []
-#       # Loop over each fold
-#       for fold, (train_idx, val_idx) in enumerate(group_kfold.split(all_train_files, all_train_classes, groups=all_groups)):
-#           # Get the file names and classes for this fold
-#           train_files_fold = all_train_files[train_idx]
-#           val_files_fold = all_train_files[val_idx]
-#           train_classes_fold = all_train_classes[train_idx]
-#           val_classes_fold = all_train_classes[val_idx]
-
-#           # Apply oversampling if enabled
-#           if oversampling_rate > 1.0:
-#               print("Applying upsampling to the training set for fold", fold, "with rate", oversampling_rate)
-#               train_files_fold, train_classes_fold = up_sampling(train_files_fold, train_classes_fold, oversampling_rate=oversampling_rate)
-
-#           # Create dataset objects for this fold
-#           train_dataset_fold = MelanomaDataset(
-#               opt,
-#               'train',
-#               opt['dataset']['dataset_train_path'],
-#               train_files_fold, train_classes_fold,
-#               transforms=None
-#           )
-#           val_dataset_fold = MelanomaDataset(
-#               opt,
-#               'val',
-#               opt['dataset']['dataset_val_path'],
-#               val_files_fold, val_classes_fold,
-#               transforms=None
-#           )
-
-#           # Create DataLoaders for this fold
-#           train_loader_fold = DataLoader(
-#               train_dataset_fold,
-#               batch_size=opt['dataset']['batch_size'],
-#               shuffle=True,
-#               num_workers=2
-#           )
-#           val_loader_fold = DataLoader(
-#               val_dataset_fold,
-#               batch_size=opt['dataset']['batch_size'],
-#               shuffle=False,
-#               num_workers=2
-#           )
-
-#           # Append the loaders along with the fold number into the list
-#           fold_loaders.append({
-#               'fold': fold,
-#               'train_loader': train_loader_fold,
-#               'val_loader': val_loader_fold
-#           })
-#       # Return the list of fold loaders
-#       return fold_loaders
-
-              
-#     else:
-#         # Split the dataset into 80/20 and default stratify along classes for the split. Note this does not stratify based on batches
-#         train_files, val_files, train_classes, val_classes = train_test_split(files, classes, train_size=0.8,
-#                                                                                 test_size=0.2, stratify=classes)
-#         # ===== APPLY OVERSAMPLING ON THE TRAINING SET IF ENABLED =====
-#         oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
-#         if oversampling_rate > 1.0:
-#             print("Applying upsampling to the training set with rate", oversampling_rate)
-#             # Use the up_sampling function on the training split only.
-#             train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate=oversampling_rate)
-    
-#     #opt, root, files, classes, transforms=None
-#     train_dataset = MelanomaDataset(
-#         opt,
-#         'train',
-#         opt['dataset']['dataset_train_path'], train_files, train_classes,
-#         transforms=None             #TODO Could drop this if transforms are being handled via config.
-#     )
-    
-#     val_dataset = MelanomaDataset(
-#         opt,
-#         'val',
-#         opt['dataset']['dataset_val_path'], val_files, val_classes,
-#         transforms=None             #TODO Could drop this if transforms are being handled via config.
-#     )
-
-#     train_sampler = None
-
-#     #TODO Configure sampler, straified batching and k-fold.
-#     '''
-#     if opt['dataset'].get('oversampling_rate', 1.0) > 1.0 or opt['dataset'].get('stratified_batching', False):
-#         train_sampler = get_sampler(
-#             train_dataset,
-#             oversampling_rate=opt['dataset'].get('oversampling_rate', 1.0),
-#             use_stratified=opt['dataset'].get('stratified_batching', False)
-#         )
-#     '''
-
-#     utils.check_dataset_balance(train_dataset)
-#     utils.check_dataset_balance(val_dataset)
-    
-#     # Create dataloaders
-#     train_loader = DataLoader(
-#         train_dataset,
-#         batch_size=opt['dataset']['batch_size'],
-#         sampler=train_sampler, 
-#         shuffle=True,
-#         num_workers=2
-#     )
-    
-#     val_loader = DataLoader(
-#         val_dataset,
-#         batch_size=opt['dataset']['batch_size'],
-#         shuffle=False,
-#         num_workers=2
-#     )
-    
-#     return train_loader, val_loader
 
