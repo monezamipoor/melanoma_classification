@@ -1,3 +1,4 @@
+import shutil
 import time
 from datetime import datetime
 import numpy as np
@@ -49,6 +50,14 @@ def run_dir(opt=None):
         os.makedirs(opt['testing']['log_dir'], exist_ok=True)
         path = os.path.join(opt['testing']['log_dir'], os.path.basename(opt['opt']).replace('.yml', '') + '-' + datetime.now().strftime('%Y-%m-%d_%H-%M-%S'))
         os.makedirs(path, exist_ok=True)
+
+        # Copy the YML over for posterity
+        if os.path.exists(opt['opt']):
+            if not os.path.exists(os.path.join(path, os.path.basename(opt['opt']))):
+                shutil.copy(opt['opt'], os.path.join(path, os.path.basename(opt['opt'])))
+        else:
+            print("Unable to copy config file to log output")
+
     rundir = path
     return rundir
 
