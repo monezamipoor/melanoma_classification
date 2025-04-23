@@ -15,7 +15,7 @@ from torchmetrics.functional.classification import (
     binary_confusion_matrix
 )
 
-# from debug import threshold_eval_metrics
+from debug import threshold_eval_metrics
 from wandb_helper import wandb_log_cm
 
 
