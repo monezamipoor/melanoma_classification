@@ -24,54 +24,67 @@ import matplotlib.pyplot as plt
 
 
 
-# TODO comments needed
-def denormalize_image(tensor, mean, std):
+import math
+import numpy as np
 
+
+
+
+def denormalize_image(tensor, mean, std):
+    """Undo ImageNet normalization on a single C×H×W tensor."""
     for t, m, s in zip(tensor, mean, std):
         t.mul_(s).add_(m)
     return tensor
 
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
-def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
-      
-    # Ensure the save directory exists
-    if not os.path.exists(save_dir):
-        os.makedirs(save_dir)
+def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
+    # 1) collect exactly num_samples images
+    imgs = []
+    for batch in loader:
+        batch_imgs = batch[0]    # assumes loader yields (images, labels)
+        for img in batch_imgs:
+            imgs.append(img.clone().cpu())
+            if len(imgs) >= num_samples:
+                break
+        if len(imgs) >= num_samples:
+            break
 
-    # Get one batch from the DataLoader. Assuming batch[0] contains the images.
-    batch = next(iter(loader))
-    images = batch[0]  # (B, C, H, W)
+    if not imgs:
+        print("  No images found in loader!")
+        return
+    imgs = imgs[:num_samples]
 
-    # Define the normalization parameters used in your transforms:
+    # 2) denormalize each
     imagenet_mean = [0.485, 0.456, 0.406]
     imagenet_std  = [0.229, 0.224, 0.225]
-
     imgs_denorm = []
-    for i in range(num_samples):
-        img = images[i].clone().cpu()
+    for img in imgs:
         img = denormalize_image(img, imagenet_mean, imagenet_std)
-        # Convert from (C, H, W) to (H, W, C)
         img_np = img.permute(1, 2, 0).numpy()
-        # Clip values to [0, 1] for display purposes
-        img_np = np.clip(img_np, 0, 1)
-        imgs_denorm.append(img_np)
+        imgs_denorm.append(np.clip(img_np, 0, 1))
 
-    # Create a grid plot for the samples
-    fig, axes = plt.subplots(1, num_samples, figsize=(20, 5))
+    # 3) set up grid
+    nrows = math.ceil(num_samples / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols*2, nrows*2))
+    axes = axes.flatten()
+
     for idx, ax in enumerate(axes):
-        ax.imshow(imgs_denorm[idx])
-        ax.set_title(f"Sample {idx+1}")
+        if idx < len(imgs_denorm):
+            ax.imshow(imgs_denorm[idx])
         ax.axis("off")
-    plt.suptitle("Augmented Samples")
-    
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    plt.suptitle("Augmented Samples", y=1.02)
 
-    save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+    # 4) save or show
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+        plt.savefig(save_path, bbox_inches='tight')
+        plt.close(fig)
+        print(f"✅ Saved augmented samples to {save_path}")
+    else:
+        plt.show()
+        plt.close(fig)
 
-    # Save the figure to the unique file path
-    plt.savefig(save_path, bbox_inches='tight')
-    plt.close(fig)
-    print(f"Saved augmented samples to {save_path}")
 
 
 
@@ -237,7 +250,16 @@ def train(melanomamodel):
           loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch + 1}/{melanomamodel.opt['training']['epochs']}")
 
           #If you want to see the images after Aug
-          # save_augmented_samples(train_loader_p, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample")
+          aug = melanomamodel.opt['dataset'].get('augmentations', {})
+          if aug.get('save_augmentation', False):
+              save_augmented_samples(
+                  melanomamodel.train_loader,
+                  num_samples=aug.get('sample_number', 10),    # default to 10 if missing
+                  ncols=10,
+                  save_dir=aug.get('aug_save_dir', '/tmp')
+              )
+
+
 
           for images, labels in loop:
               loss = train_batch(melanomamodel, images, labels)
