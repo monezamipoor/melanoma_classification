@@ -110,6 +110,7 @@ def train_hybrid_model(opt):
 
 # TEST HARNESS ONLY
 if __name__ == '__main__':
+    print(timm.list_models())
 
     # Stand-alone arguements parser
     parser = argparse.ArgumentParser()
