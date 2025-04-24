@@ -56,18 +56,19 @@ class QuadrantMixTransform:
         return img
 
 class AddGaussianNoise:
-    def __init__(self, mean=0.0, std=1.0):
-        self.mean = mean
-        self.std = std
+    def __init__(self, mean=0.0, std=1.0, p=0.3):
+        self.mean, self.std, self.p = mean, std, p
 
     def __call__(self, tensor):
         if not isinstance(tensor, torch.Tensor):
             raise TypeError("AddGaussianNoise expects a tensor input")
-        return tensor + torch.randn_like(tensor) * self.std + self.mean
+        if torch.rand(1).item() < self.p:
+            return tensor + torch.randn_like(tensor) * self.std + self.mean
+        return tensor
 
     def __repr__(self):
-        return f"{self.__class__.__name__}(mean={self.mean}, std={self.std})"
-
+        return (f"{self.__class__.__name__}(mean={self.mean}, "
+                f"std={self.std}, p={self.p})")
 
 class MelanomaDataset(Dataset):
     def __init__(self, opt, mode, root, files, classes, transforms_tuple=None, subset=1.0):
@@ -129,7 +130,13 @@ class MelanomaDataset(Dataset):
 
         # Tensor-level augmentations (must happen AFTER ToTensor)
         if aug.get('gaussian_noise', 0) > 0:
-            base_transforms.append(AddGaussianNoise(0.0, aug['gaussian_noise']))
+            base_transforms.append(
+                AddGaussianNoise(
+                    mean=0.0,
+                    std=aug['gaussian_noise'],
+                    p=aug.get('gaussian_noise_prob', 0.3)
+                )
+            )
         if aug.get('random_erasing', 0) > 0:
             base_transforms.append(transforms.RandomErasing(p=aug['random_erasing'], value='random'))
 
