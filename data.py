@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+import time
 
 import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
@@ -271,7 +272,7 @@ def melanoma_train_dataloaders(opt):
                                                 val_files_fold, val_classes_fold)
 
             if opt['dataset'].get('use_stratified_sampler', False):
-                sampler = stratified_sampler_from_classes(train_dataset_fold.classes)
+                sampler = stratified_sampler(train_dataset_fold.classes)
                 train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)
                 
             else:
@@ -310,7 +311,7 @@ def melanoma_train_dataloaders(opt):
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
         
         if opt['dataset'].get('use_stratified_sampler', False):
-            sampler = stratified_sampler_from_classes(train_dataset.classes)
+            sampler = stratified_sampler(train_dataset.classes)
             train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)
 
         else:
@@ -357,6 +358,17 @@ def melanoma_test_dataloaders(opt):
         shuffle=False,
         num_workers=2
     )
+
+    start_time = time.time()
+    total_images = 0
+
+    for images, _ in test_loader:
+        total_images += images.size(0)
+
+    duration = time.time() - start_time
+    fps = total_images / duration if duration > 0 else 0
+    print(f"[Test Loader] Processed {total_images} images in {duration:.2f} seconds -> {fps:.2f} FPS")
+
 
     return predictmode, test_loader
 
