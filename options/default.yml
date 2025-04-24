@@ -73,7 +73,7 @@ testing:
   wandb:
     project_name: "Melanoma" # yourproject
     entity: "ashkan132-fard" # yourorg
-    api_key: "e32e31ab856f60bb3a50f3439a4526ecee094986" # Replace with your actual key
+    api_key: "" # Replace with your actual key
   early_stopping:
     patience: 10
     min_delta: 0.001
