@@ -71,6 +71,7 @@ def evaluate_metrics(opt, probs, target, epoch):
     if threshold_value == 'auto':
         # Find best threshold based on F1 score
         threshold_value, best_precision, best_recall, best_f1 = find_best_threshold(target.cpu().numpy(), probs.cpu().numpy())
+        threshold_value = float(threshold_value)
         print(f"Auto-selected best threshold: {threshold_value:.4f} (Precision: {best_precision:.4f}, Recall: {best_recall:.4f}, F1: {best_f1:.4f})")
     else:
         print(f"Using configured threshold: {threshold_value}")
