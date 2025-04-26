@@ -46,9 +46,9 @@ model:
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
   freeze_backbone: false
-  num_unfrozen_layers: 3 #unfreeze layers before the classifier
+  num_unfrozen_layers: 0 #unfreeze layers before the classifier
   loss_function: "bce" # 'bce', 'focal', 'dice'
-  bce_loss_weights: [1.0]
+  bce_loss_weights: [2.0]
   dice_loss_smooth: 0.000001
   focal_loss:
     gamma: 2.0
@@ -77,10 +77,10 @@ testing:
   log_dir: "/content/drive/MyDrive/Colab Notebooks/melanoma_classification/logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
   model_save_metrics: ["AUC"]
-  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
+  model_metrics: ["AUC", "Accuracy", "F1 Score", "Precision", "Recall", "cm"]
   checkpoint_dir: "/content/drive/MyDrive/Colab Notebooks/melanoma_classification/checkpoints"   # creates this as a sub-dir under each run
   wandb:
-    project_name: "melanoma-playpen" # yourproject
+    project_name: "Melanoma" # yourproject
     entity: "university-of-surrey" # yourorg
     api_key: "c8d2bff42c019f8debc929403c96250ec6d10d6f" # Replace with your actual key
   early_stopping:
