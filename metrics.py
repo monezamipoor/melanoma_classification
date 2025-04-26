@@ -67,6 +67,13 @@ def evaluate_metrics(opt, probs, target, epoch):
     results = {}
     classlabels = ["Benign", "Malignant"]
     threshold_value = opt['testing']['threshold_value']
+
+    if threshold_value == 'auto':
+        # Find best threshold based on F1 score
+        threshold_value, best_precision, best_recall, best_f1 = find_best_threshold(target.cpu().numpy(), probs.cpu().numpy())
+        print(f"Auto-selected best threshold: {threshold_value:.4f} (Precision: {best_precision:.4f}, Recall: {best_recall:.4f}, F1: {best_f1:.4f})")
+    else:
+        print(f"Using configured threshold: {threshold_value}")
     # Convert probabilities to binary predictions using a given threshold.
     print(f"Threshold equals to: {threshold_value}")
     preds_binary = (probs > threshold_value).int()
