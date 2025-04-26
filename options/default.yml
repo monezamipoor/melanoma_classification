@@ -22,7 +22,9 @@ dataset:
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/train"
   dataset_test_csv: "/content/drive/MyDrive/melanoma_classification/data/test-12-14.csv"
+  dataset_balanced_test_csv: "./data/test-12-14-balanced.csv"
   batch_size: 64
+  subset: 1.0
 
 # Model Arguments
 model:
@@ -74,3 +76,4 @@ testing:
   early_stopping:
     patience: 10
     min_delta: 0.001
+    threshold_value: 'auto' # Set 'auto' for automatically setting threshold, otherwise enter the number
