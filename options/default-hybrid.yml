@@ -37,7 +37,7 @@ dataset:
   #dataset_train_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
   #dataset_val_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
 
-  batch_size: 32
+  batch_size: 64
 
 # Model Arguments
 model:
@@ -45,9 +45,9 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
-  freeze_backbone: true
+  freeze_backbone: false
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
-  loss_function: "bce" # 'bce', 'focal', 'dice'
+  loss_function: "bce_auto" # 'bce', 'focal', 'dice'
   bce_loss_weights: [4.0]
   dice_loss_smooth: 0.000001
   focal_loss:
@@ -56,19 +56,19 @@ model:
     reduction: "mean"
   hybrid:
     enabled: true
-    embed_dim: 128
-    num_transformer_layers: 2
+    embed_dim: 512
+    num_transformer_layers: 6
     num_heads: 4
 
 # Training Arguments
 training:
-  optimizer: "adam" # Options: adam, sgd, adamw, adagrad, amsgrad
-  learning_rate: 0.0001
+  optimizer: "adamw" # Options: adam, sgd, adamw, adagrad, amsgrad
+  learning_rate: 0.00001
   scheduler: "none" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
 
-  epochs: 20
+  epochs: 5
 
   warmup_epochs: 0
   mixed_precision: false # Whether to use mixed precision training

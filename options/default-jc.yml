@@ -15,7 +15,7 @@ dataset:
     image_mix_prob: 0.2
     #random_shear: 20
     #shift_vertical: 0.2
-  #stratified_batching: true  # For maintaining class distribution in batches
+  use_stratified_sampler: True
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
   dataset_train_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"

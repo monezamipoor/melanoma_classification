@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import Dataset, DataLoader, WeightedRandomSampler
 import torchvision.transforms as transforms
 from torchvision.datasets import ImageFolder
+import time
 
 import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
@@ -185,10 +186,10 @@ class MelanomaDataset(Dataset):
 
 
 # TODO this needs implementing properly and testing?
-def stratified_sampler(opt):
+def stratified_sampler(classes):
 
-    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
-    classes = list(dataset['target'].values)
+    # dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    # classes = list(dataset['target'].values)
 
     # If use_stratified, use some positive samples in each batch
     # If oversampling, increase weights for minority classes
@@ -197,20 +198,20 @@ def stratified_sampler(opt):
     classes_arr = np.array(classes)
     
     # Get unique classes and their respective counts
-    unique_classes, counts = np.unique(classes_arr, return_counts=True)
+    class_counts = np.bincount(classes)
 
     # This will compute the weight for each class by counting the number of samples in each class
-    weights_per_class = 1.0 / counts 
+    class_weights = 1. / class_counts
 
     # it will assign a weight to each sample based on its class
-    weights = weights_per_class[classes_arr]
-    weights = torch.tensor(sample_weights, dtype=torch.float32)
+    sample_weights = [class_weights[label] for label in classes]
+
     
     # Create the WeightedRandomSampler. Replacement=True allows oversampling.
     sampler = WeightedRandomSampler(
-        weights=weights,
-        num_samples=len(weights),
-        replacement=False
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
     )
     
     return sampler
@@ -280,6 +281,7 @@ def melanoma_train_dataloaders(opt):
         n_splits = opt['dataset'].get('n_splits', 3)
         group_kfold = GroupKFold(n_splits=n_splits)
         fold_loaders = []
+        
         for fold, (train_idx, val_idx) in enumerate(group_kfold.split(all_train_files, all_train_classes, groups=all_groups)):
             train_files_fold = all_train_files[train_idx]
             val_files_fold = all_train_files[val_idx]
@@ -299,8 +301,14 @@ def melanoma_train_dataloaders(opt):
             val_dataset_fold = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'],
                                                 val_files_fold, val_classes_fold)
 
-            train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'],
-                                           shuffle=True, num_workers=2)
+            if opt['dataset'].get('use_stratified_sampler', False):
+                sampler = stratified_sampler(train_dataset_fold.classes)
+                train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)
+                
+            else:
+                train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'],
+                                               shuffle=True, num_workers=2)
+
             val_loader_fold = DataLoader(val_dataset_fold, batch_size=opt['dataset']['batch_size'],
                                          shuffle=False, num_workers=2)
             val_dataset_fold_balanced = balanced_val(val_dataset_fold)
@@ -339,8 +347,14 @@ def melanoma_train_dataloaders(opt):
         print(f"After downsampling: {len(train_files)}")
         train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
-        train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'],
-                                  shuffle=True, num_workers=2)
+        
+        if opt['dataset'].get('use_stratified_sampler', False):
+            sampler = stratified_sampler(train_dataset.classes)
+            train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)
+
+        else:
+            train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'], shuffle=True, num_workers=2)
+
         val_loader = DataLoader(val_dataset, batch_size=opt['dataset']['batch_size'],
                                 shuffle=False, num_workers=2)
         val_dataset_balanced = balanced_val(val_dataset)
@@ -387,6 +401,17 @@ def melanoma_test_dataloaders(opt):
         shuffle=False,
         num_workers=2
     )
+
+    start_time = time.time()
+    total_images = 0
+
+    for images, _ in test_loader:
+        total_images += images.size(0)
+
+    duration = time.time() - start_time
+    fps = total_images / duration if duration > 0 else 0
+    print(f"[Test Loader] Processed {total_images} images in {duration:.2f} seconds -> {fps:.2f} FPS")
+
 
     return predictmode, test_loader
 
