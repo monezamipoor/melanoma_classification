@@ -320,7 +320,7 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     return all_labels, all_outputs, total_loss
 
 # For post training / validation tests of saved models, or from command line.
-def test(opt, melanoma_model_list, val_loader):
+def test(opt, melanoma_model_list, val_loader, tag="natural"):
 
     if melanoma_model_list is None or len(melanoma_model_list) == 0:
         print("Test: No models to test. Exiting...")
@@ -355,12 +355,12 @@ def test(opt, melanoma_model_list, val_loader):
 
     # Only writing a kaggle csv if we have no labels
     if predictonly:
-        write_kaggle_csv(opt, val_loader.dataset.files, probabilities)
+        write_kaggle_csv(opt, val_loader.dataset.files, probabilities, tag=tag)
     else:
         metrics = evaluate_metrics(opt, probabilities, all_labels, epoch='Test')
-        log_test(opt, metrics)
-        wandb_test_log(**metrics)
-        print(f"Test Metrics: {metrics}")
+        log_test(opt, metrics, tag=tag)
+        wandb_test_log(metrics, tag=tag)
+        print(f"Test Metrics ({tag}): {metrics}")
 
 def argument_parser():
     parser = argparse.ArgumentParser()
@@ -412,18 +412,14 @@ def main():
     for model in testmodels:
         melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
 
-      # Run “natural” test
     print("=== Natural test ===")
-    test(opt, melanomatests, melanomatests[0].val_loader)
+    test(opt, melanomatests, melanomatests[0].val_loader, tag="natural")
 
-    # If the user provided a balanced‐test CSV, re-run the test on that
     if opt['dataset'].get('dataset_balanced_test_csv'):
         print("\n=== Balanced test ===")
-        # temporarily swap in the balanced CSV…
         opt['dataset']['dataset_test_csv'] = opt['dataset']['dataset_balanced_test_csv']
-        # re-instantiate the MelanomaTest objects so they pick up the new CSV
         balanced_tests = [MelanomaTest(opt, mt.model_path) for mt in melanomatests]
-        test(opt, balanced_tests, balanced_tests[0].val_loader)
+        test(opt, balanced_tests, balanced_tests[0].val_loader, tag="balanced")
 
 if __name__ == "__main__":
     main()
