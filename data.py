@@ -289,7 +289,7 @@ def melanoma_train_dataloaders(opt):
         return fold_loaders
     else:
         train_files, val_files, train_classes, val_classes = train_test_split(
-            files, classes, train_size=0.8, test_size=0.2, stratify=classes
+            files, classes, train_size=0.8, test_size=0.2, stratify=classes, random_state=42
         )
         print(f"Original training set size: {len(train_files)}")
         if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:

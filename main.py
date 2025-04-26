@@ -5,7 +5,8 @@ import torch
 import torch.cuda.amp as amp
 from torch import optim
 from tqdm import tqdm
-
+import random
+import numpy as np
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
 from debug import print_batch_label_dist, print_raw_logits_and_probs
 from model import train_melanoma_model, test_melanoma_model
@@ -378,7 +379,16 @@ def argument_parser():
 
     return opt
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False  # Tradeoff: slows down but ensures deterministic behavior
+
 def main():
+    set_seed(42)
     opt = argument_parser()
     testmodels = opt['dataset']['savedmodel']   # testmodels is a list of saved model paths. Multiple models (e.g. k-fold) will trigger prediction voting in test
 
