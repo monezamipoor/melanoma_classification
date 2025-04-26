@@ -412,8 +412,18 @@ def main():
     for model in testmodels:
         melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
 
-    # When calling our test method we force all models to use the same data loader (nominally from the first one)
+      # Run “natural” test
+    print("=== Natural test ===")
     test(opt, melanomatests, melanomatests[0].val_loader)
+
+    # If the user provided a balanced‐test CSV, re-run the test on that
+    if opt['dataset'].get('dataset_balanced_test_csv'):
+        print("\n=== Balanced test ===")
+        # temporarily swap in the balanced CSV…
+        opt['dataset']['dataset_test_csv'] = opt['dataset']['dataset_balanced_test_csv']
+        # re-instantiate the MelanomaTest objects so they pick up the new CSV
+        balanced_tests = [MelanomaTest(opt, mt.model_path) for mt in melanomatests]
+        test(opt, balanced_tests, balanced_tests[0].val_loader)
 
 if __name__ == "__main__":
     main()
