@@ -3,8 +3,8 @@ dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
   n_splits: 3
-  downsampling_rate: 1 # Keep X% of class 0
-  oversampling_rate: 25 # Leave at 1 to disable
+  downsampling_rate: 0.1 # Keep X% of class 0
+  oversampling_rate: 1 # Leave at 1 to disable
   augmentations:
     #horizontal_flip: 0.2
     vertical_flip: 0.2
@@ -48,7 +48,7 @@ model:
   freeze_backbone: false
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   loss_function: "bce" # 'bce', 'focal', 'dice'
-  bce_loss_weights: [2.0]
+  bce_loss_weights: [5.0]
   dice_loss_smooth: 0.000001
   focal_loss:
     gamma: 2.0
