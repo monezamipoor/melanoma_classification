@@ -5,7 +5,8 @@ import torch
 import torch.cuda.amp as amp
 from torch import optim
 from tqdm import tqdm
-
+import random
+import numpy as np
 from data import melanoma_train_dataloaders, melanoma_test_dataloaders
 from debug import print_batch_label_dist, print_raw_logits_and_probs
 from model import train_melanoma_model, test_melanoma_model
@@ -69,7 +70,7 @@ class MelanomaTrainer:
             self.fold_loaders = melanoma_train_dataloaders(opt)  # e.g. [{'fold': 0, 'train_loader': ..., 'val_loader': ...}, ...]
             self.is_kfold = True
         else:
-            self.train_loader, self.val_loader = melanoma_train_dataloaders(opt)
+            self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
             #print_batch_label_dist(self.train_loader)
             self.is_kfold = False
 
@@ -159,6 +160,7 @@ def train(melanomamodel):
 
             train_loader = fold_data['train_loader']
             val_loader   = fold_data['val_loader']
+            val_loader_balanced   = fold_data['val_loader_balanced']
 
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
@@ -186,6 +188,7 @@ def train(melanomamodel):
 
                 # Validate on this fold's val loader
                 val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
 
                 # Step the scheduler if applicable
                 if melanomamodel.scheduler is not None:
@@ -194,10 +197,12 @@ def train(melanomamodel):
                     else:
                         melanomamodel.scheduler.step()
 
-                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}")
+                print(f"    [Natural] Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+                print(f"    [Balanced] Val Loss: {val_loss_bal:.4f}, Balanced Metrics: {val_metrics_bal}")
 
                 # Log validation results to wandb
-                wandb_val_log(avg_loss, val_loss, **val_metrics,)
+                wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
                 # Save checkpoint for best model or last, etc.
                 checkpointmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics, fold_idx)
@@ -238,13 +243,16 @@ def train(melanomamodel):
 
             avg_loss = total_loss / len(melanomamodel.train_loader)
             val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
+            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch)
 
             if melanomamodel.scheduler is not None:
                 melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
-            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}")
+            print(f"    [Natural] Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+            print(f"    [Balanced] Val Loss: {val_loss_bal:.4f}, Metrics: {val_metrics_bal}")
 
-            wandb_val_log(avg_loss, val_loss, **val_metrics)
+            wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
             savedmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
             if savedmodel is not None:
@@ -285,10 +293,10 @@ def validate(melanomamodel, val_loader, epoch=1):
         # CONVERT OUTPUTS TO PROBS FOR METRICS
         probabilities = torch.sigmoid(all_outputs)
 
-        metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch+1)
+        metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch)
         log_results(melanomamodel.opt, metrics)
 
-        print_raw_logits_and_probs(all_labels, all_outputs)
+        # print_raw_logits_and_probs(all_labels, all_outputs)
 
     return avg_loss, metrics
 
@@ -314,7 +322,7 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     return all_labels, all_outputs, total_loss
 
 # For post training / validation tests of saved models, or from command line.
-def test(opt, melanoma_model_list, val_loader):
+def test(opt, melanoma_model_list, val_loader, tag="natural"):
 
     if melanoma_model_list is None or len(melanoma_model_list) == 0:
         print("Test: No models to test. Exiting...")
@@ -349,12 +357,12 @@ def test(opt, melanoma_model_list, val_loader):
 
     # Only writing a kaggle csv if we have no labels
     if predictonly:
-        write_kaggle_csv(opt, val_loader.dataset.files, probabilities)
+        write_kaggle_csv(opt, val_loader.dataset.files, probabilities, tag=tag)
     else:
         metrics = evaluate_metrics(opt, probabilities, all_labels, epoch='Test')
-        log_test(opt, metrics)
-        wandb_test_log(**metrics)
-        print(f"Test Metrics: {metrics}")
+        log_test(opt, metrics, tag=tag)
+        wandb_test_log(metrics, tag=tag)
+        print(f"Test Metrics ({tag}): {metrics}")
 
 def argument_parser():
     parser = argparse.ArgumentParser()
@@ -378,7 +386,16 @@ def argument_parser():
 
     return opt
 
+def set_seed(seed):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    torch.cuda.manual_seed_all(seed)  # if using multi-GPU
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False  # Tradeoff: slows down but ensures deterministic behavior
+
 def main():
+    set_seed(42)
     opt = argument_parser()
     testmodels = opt['dataset']['savedmodel']   # testmodels is a list of saved model paths. Multiple models (e.g. k-fold) will trigger prediction voting in test
 
@@ -397,8 +414,14 @@ def main():
     for model in testmodels:
         melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
 
-    # When calling our test method we force all models to use the same data loader (nominally from the first one)
-    test(opt, melanomatests, melanomatests[0].val_loader)
+    print("=== Natural test ===")
+    test(opt, melanomatests, melanomatests[0].val_loader, tag="natural")
+
+    if opt['dataset'].get('dataset_balanced_test_csv'):
+        print("\n=== Balanced test ===")
+        opt['dataset']['dataset_test_csv'] = opt['dataset']['dataset_balanced_test_csv']
+        balanced_tests = [MelanomaTest(opt, mt.model_path) for mt in melanomatests]
+        test(opt, balanced_tests, balanced_tests[0].val_loader, tag="balanced")
 
 if __name__ == "__main__":
     main()

@@ -104,17 +104,15 @@ def log_results(opt, metrics):
         f.write(str(metrics.get('epoch')) + "\t" +
                 "\t".join([str(v) for v in metrics.values()]) + "\n")
 
-def log_test(opt, metrics):
+def log_test(opt, metrics, tag="natural"):
     log_dir = run_dir(opt)
-    log_filename = os.path.join(log_dir, "log_test.txt")
+    log_filename = os.path.join(log_dir, f"log_test_{tag}.txt")   # <== DIFFERENT FILE PER TAG
 
-    # If the log file doesn't exist yet, write a header
     if not os.path.exists(log_filename):
         with open(log_filename, 'w') as f:
             header = "Test\t" + "\t".join(metrics.keys()) + "\n"
             f.write(header)
 
-    # Append metrics for the current epoch
     with open(log_filename, 'a') as f:
         f.write('Test' + "\t" +
                 "\t".join([str(v) for v in metrics.values()]) + "\n")
@@ -244,7 +242,7 @@ def check_prediction_distribution(model, dataloader, device='cuda'):
     print("🔍 First batch predicted distribution:", dict(pred_counts))
 
 # Takes probabilities between 0 and 1
-def write_kaggle_csv(opt, images, probs):
+def write_kaggle_csv(opt, images, probs, tag="natural"):
     log_dir = run_dir(opt)
 
     image_list = [item.replace('.jpg', '') for item in images.tolist()]
@@ -255,9 +253,11 @@ def write_kaggle_csv(opt, images, probs):
     })
 
     config_name = os.path.basename(opt['opt']).replace('.yml', '')
-    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions.csv")
+    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions_{tag}.csv")
 
     df.to_csv(fileout, index=False)
+
+    print(f"Kaggle CSV saved to {fileout}")
 
 def soft_voting_probs_from_logits(ensemble_logits):
     probs = torch.sigmoid(ensemble_logits)

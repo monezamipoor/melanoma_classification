@@ -23,7 +23,7 @@ except ImportError:
 
 import utils
 
-
+# Creating ColumnMix Augmentation which creates an image consisted of four stripes from four images
 def column_mix(img1, img2, img3, img4):
     w, h = img1.size
     mixed = Image.new("RGB", (w, h))
@@ -38,6 +38,7 @@ def column_mix(img1, img2, img3, img4):
     mixed.paste(col4, (3 * strip_width, 0))
     return mixed
 
+# Creating QuadrantMix Augmentation which creates mosaics of four images in a grid
 class QuadrantMixTransform:
     def __init__(self, mix_prob, root, files):
         self.mix_prob = mix_prob
@@ -72,7 +73,7 @@ class AddGaussianNoise:
                 f"std={self.std}, p={self.p})")
 
 class MelanomaDataset(Dataset):
-    def __init__(self, opt, mode, root, files, classes, transforms_tuple=None, subset=1.0):
+    def __init__(self, opt, mode, root, files, classes, transforms_tuple=None):
         """
         Args:
             opt (dict): Options dictionary.
@@ -87,8 +88,9 @@ class MelanomaDataset(Dataset):
         self.mode = mode
         self.root = root
         
-        if subset < 1.0:
-            num_samples = int(len(files) * subset)
+        # Selecting a subset of data. For quick debugging purposes.
+        if self.opt['dataset']['subset'] < 1.0:
+            num_samples = int(len(files) * self.opt['dataset']['subset'])
             self.files = files[:num_samples]
             self.classes = classes[:num_samples]
         else:
@@ -213,6 +215,34 @@ def stratified_sampler(classes):
     )
     
     return sampler
+
+def balanced_val(dataset):
+    files = dataset.files
+    classes = dataset.classes
+
+    # Separate class 0 and class 1
+    class_0 = [(f, c) for f, c in zip(files, classes) if c == 0]
+    class_1 = [(f, c) for f, c in zip(files, classes) if c == 1]
+
+    min_class_size = min(len(class_0), len(class_1))
+
+    # Randomly select min_class_size samples from each
+    rng = random.Random(42)  # Create independent random generator
+    class_0_balanced = rng.sample(class_0, min_class_size)
+    class_1_balanced = rng.sample(class_1, min_class_size)
+
+    # Combine and shuffle
+    balanced_samples = class_0_balanced + class_1_balanced
+    random.shuffle(balanced_samples)
+
+    balanced_files, balanced_classes = zip(*balanced_samples)
+
+    return MelanomaDataset(
+        dataset.opt, dataset.mode, dataset.root,
+        list(balanced_files), list(balanced_classes),
+        transforms_tuple=(dataset.base_transforms, dataset.class1_transforms)
+    )
+
   
 
 def up_sampling(files, classes, oversampling_rate=2):
@@ -281,21 +311,29 @@ def melanoma_train_dataloaders(opt):
 
             val_loader_fold = DataLoader(val_dataset_fold, batch_size=opt['dataset']['batch_size'],
                                          shuffle=False, num_workers=2)
+            val_dataset_fold_balanced = balanced_val(val_dataset_fold)
+            val_loader_fold_balanced = DataLoader(
+                val_dataset_fold_balanced, batch_size=opt['dataset']['batch_size'],
+                shuffle=False, num_workers=2)
+            
             fold_loaders.append({
                 'fold': fold,
                 'train_loader': train_loader_fold,
-                'val_loader': val_loader_fold
+                'val_loader': val_loader_fold,
+                'val_loader_balanced': val_loader_fold_balanced
             })
 
             print("Fold ", str(fold), " Train Balance:")
             utils.check_dataset_balance(train_dataset_fold)
             print("Fold ", str(fold), " Val Balance:")
             utils.check_dataset_balance(val_dataset_fold)
+            print("Fold ", str(fold), " Balanced_Val Balance:")
+            utils.check_dataset_balance(val_dataset_fold_balanced)
 
         return fold_loaders
     else:
         train_files, val_files, train_classes, val_classes = train_test_split(
-            files, classes, train_size=0.8, test_size=0.2, stratify=classes
+            files, classes, train_size=0.8, test_size=0.2, stratify=classes, random_state=42
         )
         print(f"Original training set size: {len(train_files)}")
         if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:
@@ -319,13 +357,19 @@ def melanoma_train_dataloaders(opt):
 
         val_loader = DataLoader(val_dataset, batch_size=opt['dataset']['batch_size'],
                                 shuffle=False, num_workers=2)
+        val_dataset_balanced = balanced_val(val_dataset)
+        val_loader_balanced = DataLoader(
+            val_dataset_balanced, batch_size=opt['dataset']['batch_size'],
+            shuffle=False, num_workers=2)
 
         print("Train Balance:")
         utils.check_dataset_balance(train_dataset)
         print("Val Balance:")
         utils.check_dataset_balance(val_dataset)
+        print("Balanced Val Balance:")
+        utils.check_dataset_balance(val_dataset_balanced)
 
-        return train_loader, val_loader
+        return train_loader, val_loader, val_loader_balanced
 
 
 def melanoma_test_dataloaders(opt):
@@ -348,8 +392,7 @@ def melanoma_test_dataloaders(opt):
     test_dataset = MelanomaDataset(
         opt,
         'val',
-        opt['dataset']['dataset_test_path'], files, classes,
-        subset=1
+        opt['dataset']['dataset_test_path'], files, classes
     )
 
     test_loader = DataLoader(
