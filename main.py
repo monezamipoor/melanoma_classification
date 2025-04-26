@@ -293,7 +293,7 @@ def validate(melanomamodel, val_loader, epoch=1):
         # CONVERT OUTPUTS TO PROBS FOR METRICS
         probabilities = torch.sigmoid(all_outputs)
 
-        metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch+1)
+        metrics = evaluate_metrics(melanomamodel.opt, probabilities, all_labels, epoch)
         log_results(melanomamodel.opt, metrics)
 
         # print_raw_logits_and_probs(all_labels, all_outputs)
