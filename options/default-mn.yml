@@ -4,7 +4,7 @@ dataset:
   use_groupkfold: false
   n_splits: 3
   downsampling_rate: 1 # Keep X% of class 0
-  oversampling_rate: 1 # Leave at 1 to disable
+  oversampling_rate: 25 # Leave at 1 to disable
   augmentations:
     #horizontal_flip: 0.2
     vertical_flip: 0.2
@@ -77,7 +77,7 @@ testing:
   log_dir: "/content/drive/MyDrive/Colab Notebooks/melanoma_classification/logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
   model_save_metrics: ["AUC"]
-  model_metrics: ["AUC", "Accuracy", "F1 Score", "Precision", "Recall", "cm"]
+  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
   checkpoint_dir: "/content/drive/MyDrive/Colab Notebooks/melanoma_classification/checkpoints"   # creates this as a sub-dir under each run
   wandb:
     project_name: "Melanoma" # yourproject
