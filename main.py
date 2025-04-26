@@ -241,7 +241,7 @@ def train(melanomamodel):
 
             avg_loss = total_loss / len(melanomamodel.train_loader)
             val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
-            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch)
+            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.balanced_val_loader, epoch)
 
             if melanomamodel.scheduler is not None:
                 melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
