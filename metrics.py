@@ -66,10 +66,10 @@ def evaluate_metrics(opt, probs, target, epoch):
 
     results = {}
     classlabels = ["Benign", "Malignant"]
-
+    threshold_value = opt['testing']['threshold_value']
     # Convert probabilities to binary predictions using a given threshold.
-    print(f"Threshold equals to: {opt['testing']['threshold_value']}")
-    preds_binary = (probs > opt['testing']['threshold_value']).int()
+    print(f"Threshold equals to: {threshold_value}")
+    preds_binary = (probs > threshold_value).int()
     target_int = target.int()
 
     # Retrieve the list of metrics to compute from your configuration.
@@ -83,13 +83,13 @@ def evaluate_metrics(opt, probs, target, epoch):
         if metric_lower == 'auc':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_auroc(probs, target, thresholds=None)), 4)
         elif metric_lower == 'accuracy':
-            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_accuracy(probs, target, threshold=0.5)), 4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_accuracy(probs, target, threshold=threshold_value)), 4)
         elif metric_lower == 'precision':
-            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_precision(probs, target, threshold=0.5)), 4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_precision(probs, target, threshold=threshold_value)), 4)
         elif metric_lower == 'recall':
-            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_recall(probs, target, threshold=0.5)), 4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_recall(probs, target, threshold=threshold_value)), 4)
         elif metric_lower == 'f1':
-            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_f1_score(probs, target, threshold=0.5)), 4)
+            results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_f1_score(probs, target, threshold=threshold_value)), 4)
         elif metric_lower == 'ap':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_average_precision(probs, target)), 4)
         elif metric_lower == 'map':
