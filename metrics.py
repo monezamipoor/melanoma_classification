@@ -68,6 +68,7 @@ def evaluate_metrics(opt, probs, target, epoch):
     classlabels = ["Benign", "Malignant"]
 
     # Convert probabilities to binary predictions using a given threshold.
+    print(f"Threshold equals to: {opt['testing']['threshold_value']}")
     preds_binary = (probs > opt['testing']['threshold_value']).int()
     target_int = target.int()
 
