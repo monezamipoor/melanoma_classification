@@ -70,7 +70,7 @@ class MelanomaTrainer:
             self.fold_loaders = melanoma_train_dataloaders(opt)  # e.g. [{'fold': 0, 'train_loader': ..., 'val_loader': ...}, ...]
             self.is_kfold = True
         else:
-            self.train_loader, self.val_loader = melanoma_train_dataloaders(opt)
+            self.train_loader, self.val_loader, self.balanced_val_loader = melanoma_train_dataloaders(opt)
             #print_batch_label_dist(self.train_loader)
             self.is_kfold = False
 
@@ -160,6 +160,7 @@ def train(melanomamodel):
 
             train_loader = fold_data['train_loader']
             val_loader   = fold_data['val_loader']
+            val_loader_balanced   = fold_data['val_loader_balanced']
 
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
@@ -187,6 +188,7 @@ def train(melanomamodel):
 
                 # Validate on this fold's val loader
                 val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
 
                 # Step the scheduler if applicable
                 if melanomamodel.scheduler is not None:
@@ -195,10 +197,10 @@ def train(melanomamodel):
                     else:
                         melanomamodel.scheduler.step()
 
-                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Balanced Val Loss: {val_loss_bal:.4f} , Metrics: {val_metrics} , ‌Balanced Metrics: {val_metrics_bal}")
 
                 # Log validation results to wandb
-                wandb_val_log(avg_loss, val_loss, **val_metrics,)
+                wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
                 # Save checkpoint for best model or last, etc.
                 checkpointmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics, fold_idx)
@@ -239,13 +241,14 @@ def train(melanomamodel):
 
             avg_loss = total_loss / len(melanomamodel.train_loader)
             val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)            #TODO Would this be better extracted outside of the train method?
+            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch)
 
             if melanomamodel.scheduler is not None:
                 melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
-            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, ‌Balanced Val Loss: {val_loss_bal:.4f}, Metrics: {val_metrics}, Balanced Metrics: {val_metrics_bal}")
 
-            wandb_val_log(avg_loss, val_loss, **val_metrics)
+            wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
             savedmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
             if savedmodel is not None:
