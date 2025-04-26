@@ -29,6 +29,7 @@ dataset:
   # labelled-test
   #dataset_test_csv: "data/test-12-14.csv"
   dataset_test_csv: "./data/test-12-14.csv"
+  dataset_balanced_test_csv: "./data/test-12-14-balanced.csv"
   dataset_test_path: "/content/Melanoma/train"
 
   batch_size: 32
@@ -36,7 +37,7 @@ dataset:
   # k_fold_validation: 5 # Options: k, none
   # test: false # Include test dataset as well or only train and validation
   # add_metadata: false # adding or removing metadata
-  subset: 1.0
+  subset: 0.2
 
 # Model Arguments
 model:
