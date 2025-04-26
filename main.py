@@ -197,8 +197,9 @@ def train(melanomamodel):
                     else:
                         melanomamodel.scheduler.step()
 
-                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
-                print(f"                 Balanced Val Loss: {val_loss_bal:.4f}, Balanced Metrics: {val_metrics_bal}")
+                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}")
+                print(f"[Natural] Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+                print(f"[Balanced] Val Loss: {val_loss_bal:.4f}, Balanced Metrics: {val_metrics_bal}")
 
                 # Log validation results to wandb
                 wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
@@ -247,8 +248,9 @@ def train(melanomamodel):
             if melanomamodel.scheduler is not None:
                 melanomamodel.scheduler.step(val_loss if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau) else None)
 
-            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
-            print(f"             [Balanced] Val Loss: {val_loss_bal:.4f}, Metrics: {val_metrics_bal}")
+            print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}")
+            print(f"[Natural] Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+            print(f"[Balanced] Val Loss: {val_loss_bal:.4f}, Metrics: {val_metrics_bal}")
 
             wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
