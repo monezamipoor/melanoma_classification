@@ -20,6 +20,8 @@ except ImportError:
 
 
 
+
+
 import utils
 
 
@@ -93,6 +95,9 @@ class MelanomaDataset(Dataset):
             self.files = files
             self.classes = classes
 
+        self.use_contrastive = (opt['model'].get('loss_function', '') == 'contrastive')
+
+        
         # Build transforms for base and additional augmentations for class 1.
         if transforms_tuple is None:
             self.base_transforms, self.class1_transforms = self.build_transforms()
@@ -100,19 +105,29 @@ class MelanomaDataset(Dataset):
             self.base_transforms, self.class1_transforms = transforms_tuple
 
     def __getitem__(self, item):
-        # Load the image as a PIL image.
         image = Image.open(os.path.join(self.root, self.files[item])).convert("RGB")
         label = self.classes[item]
 
-        # For class 1 samples, apply the extra augmentation before the base transforms.
-        if label == 1 and self.class1_transforms is not None:
-            image = self.class1_transforms(image)
+        if self.use_contrastive:
+            # Always generate 2 views if contrastive mode
+            image1 = self.apply_transforms(image, label)
+            image2 = self.apply_transforms(image, label)
+            return (image1, image2), label
+        else:
+            image = self.apply_transforms(image, label)
+            return image, label
 
-        # Now apply the base transforms (e.g., resize, ToTensor, Normalize) to every sample.
+
+    def apply_transforms(self, image, label):
+        aug = self.opt['dataset'].get('augmentations', {})
+        apply_aug_to_all = aug.get('apply_augmentation_to_all', False)
+
+        if (label == 1 or apply_aug_to_all) and self.class1_transforms is not None:
+            image = self.class1_transforms(image)
         if self.base_transforms:
             image = self.base_transforms(image)
+        return image
 
-        return image, label
 
     def __len__(self):
         return len(self.files)
@@ -120,6 +135,9 @@ class MelanomaDataset(Dataset):
     def build_transforms(self):
         # Get augmentation options
         aug = self.opt['dataset'].get('augmentations', {})
+
+        # Check if augmentations should apply to all classes or only class 1
+        apply_aug_to_all = aug.get('apply_augmentation_to_all', False)
 
         # --- Base transforms applied to ALL samples (after any class-specific augmentations) ---
         base_transforms = [
@@ -137,74 +155,76 @@ class MelanomaDataset(Dataset):
                                                     [0.229, 0.224, 0.225]))
         base_transforms = transforms.Compose(base_transforms)
 
-        # --- Class 1 augmentations (before ToTensor, only for class 1 in training) ---
-        class1_transforms_list = []
+        # --- Class 1 augmentations (before ToTensor) or ALL classes depending on setting ---
+        augmentation_transforms = []
         if self.mode == "train":
-
             if aug.get('horizontal_flip', 0) > 0:
-                class1_transforms_list.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
+                augmentation_transforms.append(transforms.RandomHorizontalFlip(p=aug['horizontal_flip']))
             if aug.get('vertical_flip', 0) > 0:
-                class1_transforms_list.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
+                augmentation_transforms.append(transforms.RandomVerticalFlip(p=aug['vertical_flip']))
             if aug.get('random_rotation', 0) > 0:
-                class1_transforms_list.append(transforms.RandomRotation(
+                augmentation_transforms.append(transforms.RandomRotation(
                     degrees=aug['random_rotation'],
                     interpolation=InterpolationMode.NEAREST,
                     fill=(255, 255, 255)
                 ))
             if aug.get('random_shear', 0) > 0:
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255,255,255)))
+                augmentation_transforms.append(transforms.RandomAffine(degrees=0, shear=aug['random_shear'], fill=(255, 255, 255)))
             if aug.get('shift_vertical', None) is not None:
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(0, aug['shift_vertical']), fill=(255,255,255)))
+                augmentation_transforms.append(transforms.RandomAffine(degrees=0, translate=(0, aug['shift_vertical']), fill=(255, 255, 255)))
             if aug.get('shift_horizontal', None) is not None:
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, translate=(aug['shift_horizontal'], 0), fill=(255,255,255)))
+                augmentation_transforms.append(transforms.RandomAffine(degrees=0, translate=(aug['shift_horizontal'], 0), fill=(255, 255, 255)))
             if aug.get('random_zoom', None):
                 zmin, zmax = aug['random_zoom']
-                class1_transforms_list.append(transforms.RandomAffine(degrees=0, scale=(zmin, zmax), fill=(255,255,255)))
+                augmentation_transforms.append(transforms.RandomAffine(degrees=0, scale=(zmin, zmax), fill=(255, 255, 255)))
             if aug.get('color_jitter', 0) > 0:
                 cj_value = aug['color_jitter']
-                class1_transforms_list.append(transforms.ColorJitter(brightness=cj_value, contrast=cj_value, saturation=cj_value))
+                augmentation_transforms.append(transforms.ColorJitter(brightness=cj_value, contrast=cj_value, saturation=cj_value))
             if aug.get('elastic_transform', False) and ElasticTransform is not None:
-                class1_transforms_list.append(ElasticTransform(alpha=50.0))
+                augmentation_transforms.append(ElasticTransform(alpha=50.0))
             if aug.get('image_mix_enabled', False):
                 mix_prob = aug.get('image_mix_prob', 1.0)
-                class1_transforms_list.append(QuadrantMixTransform(mix_prob, self.root, self.files))
+                augmentation_transforms.append(QuadrantMixTransform(mix_prob, self.root, self.files))
 
-        class1_transforms = transforms.Compose(class1_transforms_list) if class1_transforms_list else None
+        augmentation_transforms = transforms.Compose(augmentation_transforms) if augmentation_transforms else None
 
-        return base_transforms, class1_transforms
+        if apply_aug_to_all:
+            # 👈 if apply to all classes, use in base transform
+            if augmentation_transforms:
+                full_transform = transforms.Compose([
+                    augmentation_transforms,
+                    base_transforms
+                ])
+                return full_transform, None  # No special class1 transforms
+            else:
+                return base_transforms, None
+        else:
+            # 👈 if only for class 1
+            return base_transforms, augmentation_transforms
 
 
 
-# TODO this needs implementing properly and testing?
-def stratified_sampler(opt):
-
-    dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
-    classes = list(dataset['target'].values)
-
-    # If use_stratified, use some positive samples in each batch
-    # If oversampling, increase weights for minority classes
-    # Create and return sampler uisng params
-    
-    classes_arr = np.array(classes)
-    
-    # Get unique classes and their respective counts
-    unique_classes, counts = np.unique(classes_arr, return_counts=True)
-
-    # This will compute the weight for each class by counting the number of samples in each class
-    weights_per_class = 1.0 / counts 
-
-    # it will assign a weight to each sample based on its class
-    weights = weights_per_class[classes_arr]
-    weights = torch.tensor(sample_weights, dtype=torch.float32)
-    
-    # Create the WeightedRandomSampler. Replacement=True allows oversampling.
-    sampler = WeightedRandomSampler(
-        weights=weights,
-        num_samples=len(weights),
-        replacement=False
+def stratified_sampler(labels):
+    """
+    labels: 1-D array or list of 0/1 (or multi‐class) ground‐truths
+    returns: a WeightedRandomSampler that draws with replacement,
+             using 1/count(class) as the per‐sample weight.
+    """
+    labels = np.asarray(labels, dtype=int)
+    # Count how many of each class
+    class_counts = np.bincount(labels)
+    # Weight for class i = 1 / count_i
+    class_weights = 1.0 / class_counts
+    # Weight for each sample = weight of its class
+    sample_weights = class_weights[labels]
+    sample_weights = torch.from_numpy(sample_weights).float()
+    # Draw len(labels) samples each epoch, with replacement
+    return WeightedRandomSampler(
+        weights=sample_weights,
+        num_samples=len(sample_weights),
+        replacement=True
     )
-    
-    return sampler
+
   
 
 def up_sampling(files, classes, oversampling_rate=2):
@@ -293,6 +313,7 @@ def melanoma_train_dataloaders(opt):
             train_files, train_classes = down_sampling(train_files, train_classes, downsampling_rate)
         print(f"After downsampling: {len(train_files)}")
         train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
+        # train_sampler = stratified_sampler(train_classes)
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
         train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'],
                                   shuffle=True, num_workers=2)
@@ -339,4 +360,3 @@ def melanoma_test_dataloaders(opt):
     )
 
     return predictmode, test_loader
-
