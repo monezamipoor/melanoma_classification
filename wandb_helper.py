@@ -5,8 +5,19 @@ def wandb_train_log(epoch, loss):
     loss = float(loss)
     wandb.log({"epoch": epoch, "loss": loss})
 
-def wandb_val_log(avg_loss, val_loss, **val_metrics):
-    wandb.log({"train_loss": avg_loss, "val_loss": val_loss, **val_metrics})
+def wandb_val_log(avg_loss, val_loss, balanced_val_loss, val_metrics, balanced_val_metrics):
+    wandb.log({
+        "train_loss": avg_loss,
+        "val_loss": val_loss,
+        "val_balanced_loss": balanced_val_loss,
+        **{f"val/{k}": v for k, v in val_metrics.items()},
+        **{f"val_balanced/{k}": v for k, v in balanced_val_metrics.items()}
+    })
+
+def wandb_test_log(metrics, tag="natural"):
+    wandb.log({
+        **{f"test_{tag}/{k}": v for k, v in metrics.items()}
+    })
 
 def wandb_login(opt):
     returnbool = False

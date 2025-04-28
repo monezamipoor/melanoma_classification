@@ -105,17 +105,15 @@ def log_results(opt, metrics):
         f.write(str(metrics.get('epoch')) + "\t" +
                 "\t".join([str(v) for v in metrics.values()]) + "\n")
 
-def log_test(opt, metrics):
+def log_test(opt, metrics, tag="natural"):
     log_dir = run_dir(opt)
-    log_filename = os.path.join(log_dir, "log_test.txt")
+    log_filename = os.path.join(log_dir, f"log_test_{tag}.txt")   # <== DIFFERENT FILE PER TAG
 
-    # If the log file doesn't exist yet, write a header
     if not os.path.exists(log_filename):
         with open(log_filename, 'w') as f:
             header = "Test\t" + "\t".join(metrics.keys()) + "\n"
             f.write(header)
 
-    # Append metrics for the current epoch
     with open(log_filename, 'a') as f:
         f.write('Test' + "\t" +
                 "\t".join([str(v) for v in metrics.values()]) + "\n")
@@ -245,7 +243,7 @@ def check_prediction_distribution(model, dataloader, device='cuda'):
     print("🔍 First batch predicted distribution:", dict(pred_counts))
 
 # Takes probabilities between 0 and 1
-def write_kaggle_csv(opt, images, probs):
+def write_kaggle_csv(opt, images, probs, tag="natural"):
     log_dir = run_dir(opt)
 
     image_list = [item.replace('.jpg', '') for item in images.tolist()]
@@ -256,7 +254,7 @@ def write_kaggle_csv(opt, images, probs):
     })
 
     config_name = os.path.basename(opt['opt']).replace('.yml', '')
-    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions.csv")
+    fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions_{tag}.csv")
 
     df.to_csv(fileout, index=False)
 
@@ -370,4 +368,58 @@ def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
         plt.close(fig)
 
 
+    print(f"Kaggle CSV saved to {fileout}")
 
+def soft_voting_probs_from_logits(ensemble_logits):
+    probs = torch.sigmoid(ensemble_logits)
+    avg_probs = probs.mean(dim=0)
+    return avg_probs
+
+# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
+def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
+
+    # Ensure the save directory exists
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # Get one batch from the DataLoader. Assuming batch[0] contains the images.
+    batch = next(iter(loader))
+    images = batch[0]  # (B, C, H, W)
+
+    # Define the normalization parameters used in your transforms:
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+
+    imgs_denorm = []
+    for i in range(num_samples):
+        img = images[i].clone().cpu()
+        img = denormalize_image(img, imagenet_mean, imagenet_std)
+        # Convert from (C, H, W) to (H, W, C)
+        img_np = img.permute(1, 2, 0).numpy()
+        # Clip values to [0, 1] for display purposes
+        img_np = np.clip(img_np, 0, 1)
+        imgs_denorm.append(img_np)
+
+    # Create a grid plot for the samples
+    fig, axes = plt.subplots(1, num_samples, figsize=(20, 5))
+    for idx, ax in enumerate(axes):
+        ax.imshow(imgs_denorm[idx])
+        ax.set_title(f"Sample {idx+1}")
+        ax.axis("off")
+    plt.suptitle("Augmented Samples")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+
+    # Save the figure to the unique file path
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved augmented samples to {save_path}")
+
+
+def denormalize_image(tensor, mean, std):
+
+    for t, m, s in zip(tensor, mean, std):
+        t.mul_(s).add_(m)
+    return tensor

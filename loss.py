@@ -138,7 +138,7 @@ class SupConLoss(nn.Module):
         return loss
 
 
-def melanoma_loss(opt):
+def melanoma_loss(opt, loader=None):
 
     loss_function = opt['model'].get('loss_function', 'bce')
 
@@ -148,6 +148,25 @@ def melanoma_loss(opt):
     elif loss_function == 'dice':
         print("Using Dice Loss")
         return DiceLoss(opt)
+    elif loss_function == 'bce_auto' and loader is not None:
+        # Calculates the "perfect" weighted loss for BCE based on the loader class label balance
+        all_labels = []
+        for inputs, labels in loader:
+            # Move labels to CPU if necessary
+            labels = labels.cpu()
+            all_labels.append(labels)
+
+        # Concatenate all labels into a single tensor
+        all_labels = torch.cat(all_labels)
+
+        print('Using Auto-weigted BCE')
+        num_pos = all_labels.sum()
+        num_neg = len(all_labels) - num_pos
+
+        print ("Num Pos, Neg, Ratio:", str(num_pos), ', ', str(num_neg), ',',  str(num_neg / num_pos))
+
+        pos_weight = torch.tensor([num_neg / num_pos])
+        return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
     elif loss_function == 'svm_hinge':
         print("Using SVM Hinge Loss")
         return SVMHingeLoss()

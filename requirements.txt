@@ -13,3 +13,4 @@ torchvision
 pillow
 PyYAML
 sentry-sdk
+grad-cam

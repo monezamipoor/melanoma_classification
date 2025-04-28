@@ -3,8 +3,8 @@ dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
   n_splits: 3
-  downsampling_rate: 1 # Keep X% of class 0
-  oversampling_rate: 1 # Leave at 1 to disable
+  downsampling_rate: 0.3 # Keep X% of class 0
+  oversampling_rate: 5 # Leave at 1 to disable
   augmentations:
     #horizontal_flip: 0.2
     vertical_flip: 0.2
@@ -15,26 +15,29 @@ dataset:
     image_mix_prob: 0.2
     #random_shear: 20
     #shift_vertical: 0.2
-  use_stratified_sampler: True
-  #stratified_batching: true  # For maintaining class distribution in batches
+
+  ### FOLD TRAIN AND TEST
   dataset_train_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
-  dataset_train_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
+  dataset_train_csv: "data/train-0-11.csv"
+  #dataset_train_csv: "data/train-full.csv"
   dataset_val_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
-
-  # kaggle test set
-  #dataset_test_csv: "data/test-unlabelled.csv"
-  #dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
-
-  # labelled-test
-  #dataset_test_csv: "data/test-12-14.csv"
-  dataset_test_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
   dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+  dataset_test_csv: "data/test-12-14.csv"               # Normal test
+  #dataset_test_csv: "data/test-12-14-balanced.csv"      # balanced test
 
-  batch_size: 32
-  # dataset_train_path: "./data/test"
-  # k_fold_validation: 5 # Options: k, none
-  # test: false # Include test dataset as well or only train and validation
-  # add_metadata: false # adding or removing metadata
+  ### FULL TRAIN AND KAGGLE TEST
+  #dataset_train_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+  #dataset_train_csv: "data/train-full.csv"
+  #dataset_val_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+  #dataset_test_csv: "data/test-unlabelled.csv"
+  #dataset_test_path: "H:/My Drive/melanoma/melanoma-256-jpg/test"
+
+  # SMALL SET TRAIN AND TEST
+  #dataset_train_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+  #dataset_train_csv: "H:/My Drive/melanoma/melanoma-256-jpg/train-small.csv"
+  #dataset_val_path: "H:/My Drive/melanoma/melanoma-256-jpg/train"
+
+  batch_size: 64
 
 # Model Arguments
 model:
@@ -43,29 +46,31 @@ model:
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
   freeze_backbone: false
-  num_unfrozen_layers: 3 #unfreeze layers before the classifier
-  loss_function: "bce" # 'bce', 'focal', 'dice'
-  bce_loss_weights: [1.0]
+  num_unfrozen_layers: 0 #unfreeze layers before the classifier
+  loss_function: "bce_auto" # 'bce', 'focal', 'dice'
+  bce_loss_weights: [4.0]
   dice_loss_smooth: 0.000001
   focal_loss:
     gamma: 2.0
     alpha: 0.25
     reduction: "mean"
   hybrid:
-    enabled: False
+    enabled: true
+    embed_dim: 512
+    num_transformer_layers: 6
+    num_heads: 4
 
 # Training Arguments
 training:
-  optimizer: "adam" # Options: adam, sgd, adamw, adagrad, amsgrad
-  learning_rate: 0.001
+  optimizer: "adamw" # Options: adam, sgd, adamw, adagrad, amsgrad
+  learning_rate: 0.00001
   scheduler: "none" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
 
-  epochs: 2
+  epochs: 5
 
   warmup_epochs: 0
-  freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
 
