@@ -20,9 +20,6 @@ except ImportError:
     ElasticTransform = None 
 
 
-
-
-
 import utils
 
 # Creating ColumnMix Augmentation which creates an image consisted of four stripes from four images

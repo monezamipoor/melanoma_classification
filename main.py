@@ -30,8 +30,10 @@ class MelanomaTest:
     def __init__(self, opt, testmodel):
         self.opt = opt
         print(opt)
+
         self.device = cuda_available(self.opt)
 
+        # Load test dataset (natural or balanced, depends on opt setting)
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
         self.is_kfold = False
 
@@ -43,12 +45,18 @@ class MelanomaTest:
 
         self.model_path = testmodel
         self.criterion = melanoma_loss(opt).to(self.device)
+
+        # Metrics tracking
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
 
-        self.logwandb = wandb_login(opt)  # Track if we have an active wandb login
-        print("Wandb: ", self.logwandb)
+        # W&B logging
+        self.logwandb = wandb_login(opt)
+        print("Wandb logging: ", self.logwandb)
 
+        # Log model architecture (useful in WandB or console)
         log_model(self.opt, self.model)
+
+
 
 class MelanomaTrainer:
     def __init__(self, opt):
@@ -520,38 +528,50 @@ def validate(m, val_loader, epoch=1):
     log_results(m.opt, metrics)
     return avg_loss, metrics
 
+
 def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     device = melanomamodel.device
-    loss_fn_name = melanomamodel.opt['model']['loss_function']
-    contrastive_epochs = melanomamodel.opt['training'].get('contrastive_epochs', 5)
-    in_cl_phase = (loss_fn_name == 'contrastive')
-
-    bce_crit = nn.BCEWithLogitsLoss()
-    svm_loss_fn = SVMHingeLoss().to(device)
-    supcon_crit = SupConLoss(
-        temperature=melanomamodel.opt['model']['contrastive_temperature'],
-        margin_threshold=melanomamodel.opt['model']['contrastive_margin']
-    ).to(device)
+    melanomamodel.model.eval()
 
     all_outputs = []
     all_labels = []
 
     loop = tqdm(val_loader, desc=description)
     with torch.no_grad():
-        for batch in loop:
-            if in_cl_phase:
-                (x1, x2), y = batch
-                x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+        for images, labels in loop:
+            if isinstance(images, (list, tuple)):
+                # Contrastive input (x1, x2) — not expected during normal testing but safe check
+                images1, images2 = images
+                images1, images2 = images1.to(device), images2.to(device)
+                labels = labels.to(device)
 
-                features1 = melanomamodel.model(x1, return_features=True)
-                features2 = melanomamodel.model(x2, return_features=True)
+                features1 = melanomamodel.model(images1, return_features=True)
+                features2 = melanomamodel.model(images2, return_features=True)
 
                 if melanomamodel.opt['model'].get('use_contrastive_svm', False):
                     outputs1 = melanomamodel.model.svm_head(features1).squeeze()
                     outputs2 = melanomamodel.model.svm_head(features2).squeeze()
                     outputs = torch.cat([outputs1, outputs2], dim=0)
-                    labels_contrastive = torch.cat([y, y], dim=0)
+                    labels = torch.cat([labels, labels], dim=0)
+                else:
+                    proj1 = F.normalize(melanomamodel.model.projector(features1), dim=1)
+                    proj2 = F.normalize(melanomamodel.model.projector(features2), dim=1)
+                    outputs = torch.cat([proj1, proj2], dim=0)
+                    labels = torch.cat([labels, labels], dim=0)
+            else:
+                images, labels = images.to(device), labels.to(device)
+                outputs = melanomamodel.model(images)
 
+            loss = melanomamodel.criterion(outputs, labels.float())
+            total_loss += loss.item()
+
+            all_outputs.append(outputs.cpu())
+            all_labels.append(labels.cpu())
+
+    all_outputs = torch.cat(all_outputs, dim=0)
+    all_labels = torch.cat(all_labels, dim=0)
+
+    return all_labels, all_outputs, total_loss
 
 def test(opt, melanoma_model_list, val_loader, tag="natural"):
     if melanoma_model_list is None or len(melanoma_model_list) == 0:
@@ -562,74 +582,41 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
     print(f"Test: Generate predictions only = {predictonly}")
 
     output_list = []
+    all_labels = None  # Capture once for all models
 
     for melanoma_test in melanoma_model_list:
         print(f"Test: Model {melanoma_test.model_path}")
-        device = melanoma_test.device
-        melanoma_test.model = melanoma_test.model.to(device)
+        melanoma_test.model = melanoma_test.model.to(melanoma_test.device)
         melanoma_test.model.eval()
-
-        loss_fn_name = melanoma_test.opt['model']['loss_function']
-        contrastive_epochs = melanoma_test.opt['training'].get('contrastive_epochs', 5)
-        in_cl_phase = (loss_fn_name == 'contrastive')
-
-        bce_crit = nn.BCEWithLogitsLoss()
-        svm_loss_fn = SVMHingeLoss().to(device)
-        supcon_crit = SupConLoss(
-            temperature=melanoma_test.opt['model']['contrastive_temperature'],
-            margin_threshold=melanoma_test.opt['model']['contrastive_margin']
-        ).to(device)
-
-        all_outputs = []
-        all_labels = []
 
         total_loss = 0.0
         with torch.no_grad():
-            loop = tqdm(val_loader, desc="[Test]")
-            for batch in loop:
-                if in_cl_phase:
-                    (x1, x2), y = batch
-                    x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+            labels, outputs, total_loss = validate_loss(melanoma_test, total_loss, val_loader, description='[Test]')
 
-                    features1 = melanoma_test.model(x1, return_features=True)
-                    features2 = melanoma_test.model(x2, return_features=True)
+        # Capture labels once (they are same across all models)
+        if all_labels is None:
+            all_labels = labels
 
-                    if melanoma_test.opt['model'].get('use_contrastive_svm', False):
-                        outputs1 = melanoma_test.model.svm_head(features1).squeeze()
-                        outputs2 = melanoma_test.model.svm_head(features2).squeeze()
-                        outputs = torch.cat([outputs1, outputs2], dim=0)
-                    else:
-                        proj1 = F.normalize(melanoma_test.model.projector(features1), dim=1)
-                        proj2 = F.normalize(melanoma_test.model.projector(features2), dim=1)
-                        outputs = torch.cat([proj1, proj2], dim=0)
+        if outputs.dim() > 1 and outputs.shape[1] == 1:
+            outputs = outputs.squeeze(1)
+        if labels.dim() > 1 and labels.shape[1] == 1:
+            labels = labels.squeeze(1)
 
-                else:
-                    imgs, _ = batch
-                    if isinstance(imgs, (list, tuple)):
-                        imgs = imgs[0]
-                    imgs = imgs.to(device)
-                    outputs = melanoma_test.model(imgs)
+        output_list.append(outputs)
 
-                all_outputs.append(outputs.cpu())
-
-        all_outputs = torch.cat(all_outputs, dim=0)
-
-        # If necessary, squeeze
-        if all_outputs.dim() > 1 and all_outputs.shape[1] == 1:
-            all_outputs = all_outputs.squeeze(1)
-
-        output_list.append(all_outputs)
-
-    # --- Ensemble logic ---
+    # Ensemble outputs
     ensemble_logits = torch.stack(output_list, dim=0)
     probabilities = soft_voting_probs_from_logits(ensemble_logits)
 
     if predictonly:
+        print("Saving predictions only (no ground truth labels available).")
         write_kaggle_csv(opt, val_loader.dataset.files, probabilities, tag=tag)
     else:
-        # In test we don’t have labels available easily from here so skipping metrics unless available
-        print(f"Test Completed for {tag} set.")
-
+        print("Evaluating test metrics...")
+        metrics = evaluate_metrics(opt, probabilities, all_labels, epoch="Test")
+        log_test(opt, metrics, tag=tag)
+        wandb_test_log(metrics, tag=tag)
+        print(f"Test Metrics ({tag}): {metrics}")
 
 
 

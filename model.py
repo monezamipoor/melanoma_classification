@@ -174,12 +174,34 @@ class MelanomaModel(nn.Module):
         return self.classifier(features).squeeze(-1)
 
 
-def test_melanoma_model(opt, testmodel):
-    model = MelanomaModel(opt)
-    if testmodel is not None:
-        print('Loading saved model: ', testmodel)
-        model.load_state_dict(torch.load(testmodel))
+def test_melanoma_model(opt, testmodel_path):
+    print(f"Loading saved model: {testmodel_path}")
+
+    model = train_melanoma_model(opt)  # Build a fresh model
+
+    checkpoint = torch.load(testmodel_path, map_location='cpu')
+
+    try:
+        model.load_state_dict(checkpoint)
+    except RuntimeError as e:
+        print("⚡ Fine-tuned model detected. Adjusting model structure for loading...")
+
+        # Rebuild model head to match fine-tuned checkpoint
+        model.use_svm_head = False
+        model.use_contrastive_head = False
+        model.projector = None
+
+        feature_dim = model.backbone.num_features if hasattr(model.backbone, 'num_features') else 1280
+        model.classifier = nn.Sequential(
+            nn.Dropout(opt['model']['dropout_rate']),
+            nn.Linear(feature_dim, 1)
+        )
+
+        # Now load again
+        model.load_state_dict(checkpoint)
+
     return model
+
 
 def train_melanoma_model(opt):
     model = MelanomaModel(opt)
