@@ -19,17 +19,10 @@ from utils import log_results, cuda_available, log_model, save_checkpoint, write
     soft_voting_probs_from_logits, log_test, save_augmented_samples
 from metrics import evaluate_metrics
 from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log, wandb_test_log
-
-
+import math
+import wandb
 #Uncomment to turn off wandb entirely for debugging only
 #wandb.init(mode="disabled")
-
-
-
-import math
-import numpy as np
-
-
 
 
 
@@ -278,50 +271,50 @@ def train(melanomamodel):
               melanomamodel.freeze_backbone(False)
               melanomamodel.backbone_frozen = False
 
-          if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
-              epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
+            if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
+                epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
 
-              print(f"✨ Switching to fine-tuning phase at epoch {epoch}...")
+                print(f"✨ Switching to fine-tuning phase at epoch {epoch}...")
 
-              # 1. Update the loss function in opt
-              melanomamodel.opt['model']['loss_function'] = 'bce'
+                # 1. Update the loss function in opt
+                melanomamodel.opt['model']['loss_function'] = 'bce'
 
-              # 2. Rebuild optimizer, scheduler and loss
-              melanomamodel.optimizer = melanomamodel.get_optimizer()
-              melanomamodel.scheduler = melanomamodel.get_scheduler()
-              melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
+                # 2. Rebuild optimizer, scheduler and loss
+                melanomamodel.optimizer = melanomamodel.get_optimizer()
+                melanomamodel.scheduler = melanomamodel.get_scheduler()
+                melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
 
-              # 3. (optional) Tell model to use normal head
-              melanomamodel.model.training_phase = 'finetune'
-              melanomamodel.model.use_svm_head = False   
-              melanomamodel.model.use_contrastive_head = False
+                # 3. (optional) Tell model to use normal head
+                melanomamodel.model.training_phase = 'finetune'
+                melanomamodel.model.use_svm_head = False   
+                melanomamodel.model.use_contrastive_head = False
 
-              melanomamodel.model.projector = None   
-              feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
-              melanomamodel.model.classifier = nn.Sequential(
-                  nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                  nn.Linear(feature_dim, 1)
-              )
+                melanomamodel.model.projector = None   
+                feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
+                melanomamodel.model.classifier = nn.Sequential(
+                    nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
+                    nn.Linear(feature_dim, 1)
+                )
 
-              melanomamodel.opt['training']['contrastive_epochs'] = -1
+                melanomamodel.opt['training']['contrastive_epochs'] = -1
 
-              if melanomamodel.logwandb:
-                  wandb.log({"Switch_to_Finetune_Epoch": epoch})
+                if melanomamodel.logwandb:
+                    wandb.log({"Switch_to_Finetune_Epoch": epoch})
 
-          melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
+            melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
             melanomamodel.model.train()
             total_loss = 0
 
             loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch + 1}/{melanomamodel.opt['training']['epochs']}")
             #If you want to see the images after Aug
             aug = melanomamodel.opt['dataset'].get('augmentations', {})
-          if aug.get('save_augmentation', False):
-              save_augmented_samples(
-                  melanomamodel.train_loader,
-                  num_samples=aug.get('sample_number', 10),    # default to 10 if missing
-                  ncols=10,
-                  save_dir=aug.get('aug_save_dir', '/tmp')
-              )
+            if aug.get('save_augmentation', False):
+                save_augmented_samples(
+                    melanomamodel.train_loader,
+                    num_samples=aug.get('sample_number', 10),    # default to 10 if missing
+                    ncols=10,
+                    save_dir=aug.get('aug_save_dir', '/tmp')
+                )
 
 
 
@@ -344,8 +337,8 @@ def train(melanomamodel):
             if melanomamodel.scheduler is not None:
                 if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                   melanomamodel.scheduler.step(val_loss)
-              else:
-                  melanomamodel.scheduler.step()
+                else:
+                    melanomamodel.scheduler.step()
 
             print(f"Epoch {epoch+1} - Train Loss: {avg_loss:.4f}")
             print(f"    [Natural] Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
