@@ -129,84 +129,108 @@ def train(melanomamodel):
     wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
 
     if melanomamodel.is_kfold:
-      for fold_data in melanomamodel.fold_loaders:
-          fold_idx = fold_data['fold']
-          print(f"\n[INFO] Starting Fold {fold_idx}")
-
-          # Re-initialize the model for each fold (fresh start)
-          melanomamodel.model = melanoma_model(melanomamodel.opt).to(melanomamodel.device)
-          melanomamodel.optimizer = melanomamodel.get_optimizer()
-          melanomamodel.scheduler = melanomamodel.get_scheduler()
-          melanomamodel.criterion = melanoma_loss(melanomamodel.opt)  # <<< make sure criterion is reset here!
-
-          train_loader = fold_data['train_loader']
-          val_loader   = fold_data['val_loader']
-
-          wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
-
-          for epoch in range(melanomamodel.opt['training']['epochs']):
-              if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
-                  epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
-
-                  print(f"✨ Switching to fine-tuning phase at epoch {epoch} for Fold {fold_idx}...")
-
-                  # Switch for K-Fold too
-                  melanomamodel.opt['model']['loss_function'] = 'bce'
-                  melanomamodel.optimizer = melanomamodel.get_optimizer()
-                  melanomamodel.scheduler = melanomamodel.get_scheduler()
-                  melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
-
-                  melanomamodel.model.training_phase = 'finetune'
-                  melanomamodel.model.use_svm_head = False
-                  melanomamodel.model.use_contrastive_head = False
-
-                  melanomamodel.model.projector = None
-                  feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
-                  melanomamodel.model.classifier = nn.Sequential(
-                      nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                      nn.Linear(feature_dim, 1)
-                  )
-
-                  melanomamodel.opt['training']['contrastive_epochs'] = -1
-
-                  if melanomamodel.logwandb:
-                      wandb.log({"Switch_to_Finetune_Epoch": epoch, "Fold": fold_idx})
-
-              melanomamodel.model.train()
-              total_loss = 0
-
-              loop = tqdm(train_loader, desc=f"[Fold {fold_idx}] Epoch {epoch+1}/{melanomamodel.opt['training']['epochs']}")
-
-              for images, labels in loop:
-                  loss = train_batch(melanomamodel, images, labels, epoch)
-
-                  if melanomamodel.opt['training']['gradient_clipping']:
-                      torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
-
-                  total_loss += loss.item()
-                  loop.set_postfix(loss=loss.item())
-
-              # Log final batch loss for the epoch
-              wandb_train_log(epoch+1, float(loss))
-
-              avg_loss = total_loss / len(train_loader)
-
-              # Validate on this fold's val loader
-              val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
-
-              if melanomamodel.scheduler is not None:
-                  if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                      melanomamodel.scheduler.step(val_loss)
-                  else:
-                      melanomamodel.scheduler.step()
-
-              print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
-
-              # Log validation results to wandb
-              wandb_val_log(avg_loss, val_loss, **val_metrics)
-
-              # Save checkpoint
-              save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch + 1, val_metrics)
+        testmodels = []
+    
+        for fold_data in melanomamodel.fold_loaders:
+            fold_idx = fold_data['fold']
+            print(f"\n[INFO] Starting Fold {fold_idx}")
+    
+            # Fresh model for each fold
+            melanomamodel.model = melanoma_model(melanomamodel.opt).to(melanomamodel.device)
+            melanomamodel.optimizer = melanomamodel.get_optimizer()
+            melanomamodel.scheduler = melanomamodel.get_scheduler()
+            melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
+            melanomamodel.best_metrics = {metric: float('-inf') for metric in melanomamodel.opt['testing']['model_save_metrics']}
+    
+            train_loader = fold_data['train_loader']
+            val_loader = fold_data['val_loader']
+    
+            wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
+    
+            modeltokeep = None
+    
+            for epoch in range(melanomamodel.opt['training']['epochs']):
+                if melanomamodel.backbone_frozen and epoch == melanomamodel.freeze_backbone_epochs:
+                    print(f"🔓 Unfreezing backbone at epoch {epoch} for Fold {fold_idx}...")
+                    melanomamodel.freeze_backbone(False)
+                    melanomamodel.backbone_frozen = False
+    
+                if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
+                    epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
+                    print(f"✨ Switching to fine-tuning phase at epoch {epoch} for Fold {fold_idx}...")
+    
+                    # 1. Update loss function
+                    melanomamodel.opt['model']['loss_function'] = 'bce'
+    
+                    # 2. Rebuild optimizer, scheduler, loss
+                    melanomamodel.optimizer = melanomamodel.get_optimizer()
+                    melanomamodel.scheduler = melanomamodel.get_scheduler()
+                    melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
+    
+                    # 3. Update model heads
+                    melanomamodel.model.training_phase = 'finetune'
+                    melanomamodel.model.use_svm_head = False
+                    melanomamodel.model.use_contrastive_head = False
+                    melanomamodel.model.projector = None
+    
+                    feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
+                    melanomamodel.model.classifier = nn.Sequential(
+                        nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
+                        nn.Linear(feature_dim, 1)
+                    )
+    
+                    melanomamodel.opt['training']['contrastive_epochs'] = -1
+    
+                    if melanomamodel.logwandb:
+                        wandb.log({"Switch_to_Finetune_Epoch": epoch, "Fold": fold_idx})
+    
+                melanomamodel.model.train()
+                total_loss = 0.0
+    
+                loop = tqdm(train_loader, desc=f"[Fold {fold_idx}] Epoch {epoch+1}/{melanomamodel.opt['training']['epochs']}")
+    
+                aug = melanomamodel.opt['dataset'].get('augmentations', {})
+                if aug.get('save_augmentation', False):
+                    save_augmented_samples(
+                        train_loader,
+                        num_samples=aug.get('sample_number', 10),
+                        ncols=10,
+                        save_dir=aug.get('aug_save_dir', '/tmp')
+                    )
+    
+                for images, labels in loop:
+                    loss = train_batch(melanomamodel, images, labels, epoch)
+    
+                    if melanomamodel.opt['training']['gradient_clipping']:
+                        torch.nn.utils.clip_grad_norm_(melanomamodel.model.parameters(), melanomamodel.opt['training']['gradient_clipping'])
+    
+                    total_loss += loss.item()
+                    loop.set_postfix(loss=loss.item())
+    
+                wandb_train_log(epoch+1, float(loss))
+    
+                avg_loss = total_loss / len(train_loader)
+    
+                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+    
+                if melanomamodel.scheduler is not None:
+                    if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                        melanomamodel.scheduler.step(val_loss)
+                    else:
+                        melanomamodel.scheduler.step()
+    
+                print(f"[Fold {fold_idx}] Epoch {epoch+1} - Train Loss: {avg_loss:.4f}, Val Loss: {val_loss:.4f}, Metrics: {val_metrics}")
+    
+                if val_metrics:
+                    wandb_val_log(avg_loss, val_loss, **val_metrics)
+    
+                checkpointmodel = save_checkpoint(melanomamodel.opt, melanomamodel.best_metrics, melanomamodel.model, epoch+1, val_metrics, fold_idx)
+                if checkpointmodel is not None:
+                    modeltokeep = checkpointmodel
+    
+            # Save final model for this fold
+            if modeltokeep is not None:
+                testmodels.append(modeltokeep)
 
     else:
       # Single train/val scenario
