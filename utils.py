@@ -121,6 +121,12 @@ def log_test(opt, metrics, tag="natural"):
     print(f"Test metrics logged to {log_filename}")
 
 def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
+    # utils.py
+    if not metrics:
+        # If metrics is empty, we are in contrastive phase -> SKIP checkpoint saving
+        print("Skipping checkpoint saving (no metrics yet in contrastive phase).")
+        return None
+
 
     if check_nested_key(opt, ['testing', 'model_save_strategy']) == False or check_nested_key(opt, ['testing', 'model_save_metrics']) == False:
         return None
