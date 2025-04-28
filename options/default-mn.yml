@@ -69,8 +69,7 @@ training:
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
   contrastive_epochs: 0
-  epochs: 2
-
+  epochs: 20
   warmup_epochs: 0
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
