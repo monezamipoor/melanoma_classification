@@ -6,19 +6,27 @@ dataset:
   downsampling_rate: 0.3 # Keep X% of class 0
   oversampling_rate: 5 # Leave at 1 to disable
   augmentations:
-    horizontal_flip: 0.2
-    vertical_flip: 0.2
-    random_rotation: 20 # degrees
-    color_jitter: 0.2 # brightness, contrast, saturation
-    image_mix_enabled: False
-    image_mix_type: column # Use "column" to activate ColumnMixTransform.
-    image_mix_prob: 0.2
-    #random_shear: 20
-    #shift_vertical: 0.2
+    #horizontal_flip: 0.5
+    vertical_flip: 0.4
+    #random_rotation: 10
+    color_jitter: 0.2
+    #shift_vertical: 0.1
+    #shift_horizontal: 0.1
+    random_zoom: [0.9, 1.1]
+    elastic_transform: false
+    random_erasing: 0.2
+    #gaussian_noise: 0.1
+    gaussian_noise_prob: 0.3
+    image_mix_enabled: true
+    image_mix_type: column
+    image_mix_prob: 0.3
+    save_augmentation: true
+    aug_save_dir: "/content/drive/MyDrive/melanoma/logs/Sample"
+    sample_number: 100
 
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
-  dataset_train_csv: "/content/drive/MyDrive/melanoma_classification/data/train-0-11.csv"
+  dataset_train_csv: "/content/drive/MyDrive/melanoma/data/train-0-11.csv"
   dataset_val_path: "/content/Melanoma/train"
   dataset_test_path: "/content/Melanoma/train"
   dataset_test_csv: "/content/drive/MyDrive/melanoma_classification/data/test-12-14.csv"
@@ -41,8 +49,8 @@ model:
     gamma: 2.0
     alpha: 0.4
     reduction: "mean"
-  hybrid:                         # This is to support the in-progress implementation of CNN >> Transformer (James)
-    enabled: False                # Set to False for all tests (for now)
+  hybrid: # This is to support the in-progress implementation of CNN >> Transformer (James)
+    enabled: False # Set to False for all tests (for now)
     embed_dim: 128
     num_transformer_layers: 2
     num_heads: 4
@@ -64,11 +72,11 @@ training:
 
 # Testing and Logging Arguments
 testing:
-  log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
+  log_dir: "./logs" # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
   model_save_metrics: ["AUC"]
-  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
-  checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
+  model_metrics: ["AUC", "Accuracy", "F1", "Precision", "Recall", "cm"]
+  checkpoint_dir: "./checkpoints" # creates this as a sub-dir under each run
   wandb:
     project_name: "melanoma-playpen" # yourproject
     entity: "jc03172-university-of-surrey" # yourorg
@@ -76,4 +84,4 @@ testing:
   early_stopping:
     patience: 10
     min_delta: 0.001
-    threshold_value: 'auto' # Set 'auto' for automatically setting threshold, otherwise enter the number
+    threshold_value: "auto" # Set 'auto' for automatically setting threshold, otherwise enter the number
