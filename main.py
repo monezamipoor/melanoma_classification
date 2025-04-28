@@ -27,7 +27,7 @@ import wandb
 
 
 class MelanomaTest:
-    def __init__(self, opt, testmodel_path):
+    def __init__(self, opt, testmodel):
         self.opt = opt
         print(opt)
 
@@ -37,16 +37,13 @@ class MelanomaTest:
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
         self.is_kfold = False
 
-        # Load model
-        if opt['model']['hybrid'].get('enabled', False):
+        if opt['model']['hybrid'].get('enabled', False):            # Use the hybrid model config
+            self.model = test_hybrid_model(opt, testmodel).to(self.device)
             print("Using Hybrid Model")
-            self.model = test_hybrid_model(opt, testmodel_path).to(self.device)
-        else:
-            self.model = test_melanoma_model(opt, testmodel_path).to(self.device)
+        else:                                                       # Use the basic model config
+            self.model = test_melanoma_model(opt, testmodel).to(self.device)
 
-        self.model_path = testmodel_path
-
-        # Very important: after loading model, prepare proper criterion for evaluation
+        self.model_path = testmodel
         self.criterion = melanoma_loss(opt).to(self.device)
 
         # Metrics tracking
