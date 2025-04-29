@@ -508,6 +508,7 @@ def validate(m, val_loader, epoch=1):
                     imgs = imgs[0]
                 imgs, lbls = imgs.to(device), lbls.to(device)
                 preds = m.model(imgs)
+                probs = torch.sigmoid(preds)
                 loss = bce_crit(preds, lbls.float())
                 total_loss += loss.item()
 
