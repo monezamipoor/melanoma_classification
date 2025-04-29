@@ -512,7 +512,7 @@ def validate(m, val_loader, epoch=1):
                 loss = bce_crit(preds, lbls.float())
                 total_loss += loss.item()
 
-                all_outputs.append(preds.cpu())
+                all_outputs.append(probs.cpu())
                 all_labels.append(lbls.cpu())
 
     avg_loss = total_loss / len(val_loader)
