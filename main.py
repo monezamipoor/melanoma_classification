@@ -21,6 +21,11 @@ from metrics import evaluate_metrics
 from wandb_helper import wandb_login, wandb_watch, wandb_train_log, wandb_val_log, wandb_test_log
 import math
 import wandb
+from contrastive_and_svm import (
+  train_contrastive_batch, validate_contrastive, switch_to_finetune_phase,
+  extract_contrastive_pair, maybe_run_contrastive_validation,
+  evaluate_svm_outputs
+)
 #Uncomment to turn off wandb entirely for debugging only
 #wandb.init(mode="disabled")
 
@@ -180,40 +185,11 @@ def train(melanomamodel):
             modeltokeep = None
 
             for epoch in range(melanomamodel.opt['training']['epochs']):
-                if melanomamodel.backbone_frozen and epoch == melanomamodel.freeze_backbone_epochs:
-                    print(f"🔓 Unfreezing backbone at epoch {epoch} for Fold {fold_idx}...")
-                    melanomamodel.freeze_backbone(False)
-                    melanomamodel.backbone_frozen = False
-    
                 if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
                     epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
-                    print(f"✨ Switching to fine-tuning phase at epoch {epoch} for Fold {fold_idx}...")
-    
-                    # 1. Update loss function
-                    melanomamodel.opt['model']['loss_function'] = 'bce'
-    
-                    # 2. Rebuild optimizer, scheduler, loss
-                    melanomamodel.optimizer = melanomamodel.get_optimizer()
-                    melanomamodel.scheduler = melanomamodel.get_scheduler()
-                    melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
-    
-                    # 3. Update model heads
-                    melanomamodel.model.training_phase = 'finetune'
-                    melanomamodel.model.use_svm_head = False
-                    melanomamodel.model.use_contrastive_head = False
-                    melanomamodel.model.projector = None
-    
-                    feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
-                    melanomamodel.model.classifier = nn.Sequential(
-                        nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                        nn.Linear(feature_dim, 1)
-                    )
-    
-                    melanomamodel.opt['training']['contrastive_epochs'] = -1
-    
-                    if melanomamodel.logwandb:
-                        wandb.log({"Switch_to_Finetune_Epoch": epoch, "Fold": fold_idx})
-    
+                    switch_to_finetune_phase(melanomamodel, epoch, fold_idx if melanomamodel.is_kfold else None)
+
+                    
                 melanomamodel.model.train()
                 total_loss = 0.0
     
@@ -279,35 +255,11 @@ def train(melanomamodel):
               melanomamodel.freeze_backbone(False)
               melanomamodel.backbone_frozen = False
 
+
             if (melanomamodel.opt['model'].get('loss_function') == 'contrastive' and 
                 epoch == melanomamodel.opt['training'].get('contrastive_epochs', 5)):
+                switch_to_finetune_phase(melanomamodel, epoch, fold_idx if melanomamodel.is_kfold else None)
 
-                print(f"✨ Switching to fine-tuning phase at epoch {epoch}...")
-
-                # 1. Update the loss function in opt
-                melanomamodel.opt['model']['loss_function'] = 'bce'
-
-                # 2. Rebuild optimizer, scheduler and loss
-                melanomamodel.optimizer = melanomamodel.get_optimizer()
-                melanomamodel.scheduler = melanomamodel.get_scheduler()
-                melanomamodel.criterion = melanoma_loss(melanomamodel.opt)
-
-                # 3. (optional) Tell model to use normal head
-                melanomamodel.model.training_phase = 'finetune'
-                melanomamodel.model.use_svm_head = False   
-                melanomamodel.model.use_contrastive_head = False
-
-                melanomamodel.model.projector = None   
-                feature_dim = melanomamodel.model.backbone.num_features if hasattr(melanomamodel.model.backbone, 'num_features') else 1280
-                melanomamodel.model.classifier = nn.Sequential(
-                    nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                    nn.Linear(feature_dim, 1)
-                )
-
-                melanomamodel.opt['training']['contrastive_epochs'] = -1
-
-                if melanomamodel.logwandb:
-                    wandb.log({"Switch_to_Finetune_Epoch": epoch})
 
             melanomamodel.model = melanomamodel.model.to(melanomamodel.device)
             melanomamodel.model.train()
@@ -369,48 +321,10 @@ def train_batch(melanomamodel, images, labels, epoch):
     melanomamodel.optimizer.zero_grad()
 
     if not use_contrastive:
-        if isinstance(images, (list, tuple)) and isinstance(images[0], torch.Tensor) and isinstance(images[1], torch.Tensor):
-            # If both elements are Tensors, it was from contrastive -> pick one
-            images = images[0]
-        # else: already normal batch, no need to touch
-
+        images = extract_contrastive_pair(images)
 
     if use_contrastive:
-        # --- Contrastive phase ---
-        images1, images2 = images
-        images1, images2 = images1.to(melanomamodel.device), images2.to(melanomamodel.device)
-        labels = labels.to(melanomamodel.device)
-
-        features1 = melanomamodel.model(images1, return_features=True)
-        features2 = melanomamodel.model(images2, return_features=True)
-
-        if melanomamodel.opt['model'].get('use_contrastive_svm', False):
-            outputs1 = melanomamodel.model.svm_head(features1).squeeze()
-            outputs2 = melanomamodel.model.svm_head(features2).squeeze()
-
-            outputs = torch.cat([outputs1, outputs2], dim=0)
-            labels_contrastive = torch.cat([labels, labels], dim=0)
-
-            svm_loss_fn = SVMHingeLoss()
-            loss = svm_loss_fn(outputs, labels_contrastive)
-        else:
-            proj1 = F.normalize(melanomamodel.model.projector(features1), dim=1)
-            proj2 = F.normalize(melanomamodel.model.projector(features2), dim=1)
-
-            embeddings = torch.cat([proj1, proj2], dim=0)
-            labels_contrastive = torch.cat([labels, labels], dim=0)
-
-            temperature = melanomamodel.opt['model'].get('contrastive_temperature', 0.07)
-            sim_matrix = torch.matmul(embeddings, embeddings.T) / temperature
-
-            label_mask = (labels_contrastive.unsqueeze(0) == labels_contrastive.unsqueeze(1)).float()
-            logits_mask = torch.ones_like(label_mask) - torch.eye(label_mask.shape[0], device=label_mask.device)
-
-            exp_sim = torch.exp(sim_matrix) * logits_mask
-            log_prob = sim_matrix - torch.log(exp_sim.sum(dim=1, keepdim=True) + 1e-9)
-
-            mean_log_prob_pos = (label_mask * log_prob).sum(1) / (label_mask.sum(1) + 1e-9)
-            loss = -mean_log_prob_pos.mean()
+        loss = train_contrastive_batch(melanomamodel, images, labels)
 
     else:
 
@@ -421,19 +335,9 @@ def train_batch(melanomamodel, images, labels, epoch):
         preds = melanomamodel.model(images)
 
         loss_function = melanomamodel.opt['model'].get('loss_function', 'bce').lower()
-        if loss_function == 'bce':
-            pos_weight = torch.tensor(melanomamodel.opt['model'].get('bce_loss_weights', [1.0])).to(melanomamodel.device)
-            criterion = nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-        elif loss_function == 'focal':
-            criterion = FocalLoss(melanomamodel.opt).to(melanomamodel.device)
-        elif loss_function == 'dice':
-            criterion = DiceLoss(melanomamodel.opt).to(melanomamodel.device)
-        elif loss_function == 'svm_hinge':
-            criterion = SVMHingeLoss().to(melanomamodel.device)
-        else:
-            raise ValueError(f"Unsupported loss function: {loss_function}")
 
-        loss = criterion(preds, labels.float())
+        loss = melanomamodel.criterion(preds, labels.float())
+
 
     loss.backward()
     melanomamodel.optimizer.step()
@@ -447,86 +351,38 @@ def validate(m, val_loader, epoch=1):
     m.model.eval()
     total_loss = 0.0
 
-    loss_fn_name = m.opt['model']['loss_function']
-    contrastive_epochs = m.opt['training']['contrastive_epochs']
-    in_cl_phase = (loss_fn_name == 'contrastive') and (epoch < contrastive_epochs)
+    # Optional: early exit if contrastive validation applies
+    avg_loss, metrics, early_exit = maybe_run_contrastive_validation(m, val_loader, epoch)
+    if early_exit:
+        return avg_loss, metrics
 
     bce_crit = nn.BCEWithLogitsLoss()
-    svm_loss_fn = SVMHingeLoss().to(device)
-    supcon_crit = SupConLoss(
-        temperature = m.opt['model']['contrastive_temperature'],
-        margin_threshold = m.opt['model']['contrastive_margin']
-    ).to(device)
+    all_outputs, all_labels = [], []
 
-    all_outputs = []
-    all_labels = []
-
-    # Refactored the loss loop to "validate_loss"
     with torch.no_grad():
-        loop = tqdm(val_loader, desc=("[Val: Contrastive]" if in_cl_phase else "[Val]"))
-        for batch in loop:
-            if in_cl_phase:
-                (x1, x2), y = batch
-                x1, x2, y = x1.to(device), x2.to(device), y.to(device)
+        loop = tqdm(val_loader, desc="[Val]")
+        for imgs, lbls in loop:
+            if isinstance(imgs, (list, tuple)):
+                imgs = imgs[0]
+            imgs, lbls = imgs.to(device), lbls.to(device)
 
-                features1 = m.model(x1, return_features=True)
-                features2 = m.model(x2, return_features=True)
+            preds = m.model(imgs)
+            probs = torch.sigmoid(preds)
+            loss = bce_crit(preds, lbls.float())
+            total_loss += loss.item()
 
-                if m.opt['model'].get('use_contrastive_svm', False):
-                    # SVM-only validation
-                    outputs1 = m.model.svm_head(features1).squeeze()
-                    outputs2 = m.model.svm_head(features2).squeeze()
-
-                    outputs = torch.cat([outputs1, outputs2], dim=0)
-                    labels_contrastive = torch.cat([y, y], dim=0)
-
-                    loss = svm_loss_fn(outputs, labels_contrastive)
-                    total_loss += loss.item()
-
-                    all_outputs.append(outputs.cpu())
-                    all_labels.append(labels_contrastive.cpu())
-
-                else:
-                    # Standard contrastive validation
-                    z1 = F.normalize(m.model.projector(features1), dim=1)
-                    z2 = F.normalize(m.model.projector(features2), dim=1)
-
-                    feats = torch.cat([z1, z2], dim=0)
-                    labs = torch.cat([y, y], dim=0)
-
-                    loss = supcon_crit(feats, labs)
-                    total_loss += loss.item()
-
-                    # for logging we can store the scalar loss
-                    all_outputs.append(torch.tensor([loss.item()]))
-                    all_labels.append(torch.tensor([0]))  # dummy
-
-            else:
-                # Standard BCE validation
-                imgs, lbls = batch
-                if isinstance(imgs, (list, tuple)):
-                    imgs = imgs[0]
-                imgs, lbls = imgs.to(device), lbls.to(device)
-                preds = m.model(imgs)
-                loss = bce_crit(preds, lbls.float())
-                total_loss += loss.item()
-
-                all_outputs.append(preds.cpu())
-                all_labels.append(lbls.cpu())
+            all_outputs.append(probs.cpu())
+            all_labels.append(lbls.cpu())
 
     avg_loss = total_loss / len(val_loader)
     all_outputs = torch.cat(all_outputs, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
 
-    # If in contrastive-only phase
-    if in_cl_phase:
-        print(f"⚡ Contrastive‐only val @ epoch {epoch}, loss={avg_loss:.4f}")
-        return avg_loss, {}
-
-    # Standard metric evaluation
-    metrics = evaluate_metrics(m.opt, all_outputs, all_labels, epoch+1)
+    metrics = evaluate_metrics(m.opt, all_outputs, all_labels, epoch + 1)
     log_results(m.opt, metrics)
+
     return avg_loss, metrics
+
 
 
 def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
@@ -539,27 +395,14 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     loop = tqdm(val_loader, desc=description)
     with torch.no_grad():
         for images, labels in loop:
+            labels = labels.to(device)
+
             if isinstance(images, (list, tuple)):
-                # Contrastive input (x1, x2) — not expected during normal testing but safe check
                 images1, images2 = images
                 images1, images2 = images1.to(device), images2.to(device)
-                labels = labels.to(device)
-
-                features1 = melanomamodel.model(images1, return_features=True)
-                features2 = melanomamodel.model(images2, return_features=True)
-
-                if melanomamodel.opt['model'].get('use_contrastive_svm', False):
-                    outputs1 = melanomamodel.model.svm_head(features1).squeeze()
-                    outputs2 = melanomamodel.model.svm_head(features2).squeeze()
-                    outputs = torch.cat([outputs1, outputs2], dim=0)
-                    labels = torch.cat([labels, labels], dim=0)
-                else:
-                    proj1 = F.normalize(melanomamodel.model.projector(features1), dim=1)
-                    proj2 = F.normalize(melanomamodel.model.projector(features2), dim=1)
-                    outputs = torch.cat([proj1, proj2], dim=0)
-                    labels = torch.cat([labels, labels], dim=0)
+                outputs, labels = evaluate_svm_outputs(melanomamodel, images1, images2, labels)
             else:
-                images, labels = images.to(device), labels.to(device)
+                images = images.to(device)
                 outputs = melanomamodel.model(images)
 
             loss = melanomamodel.criterion(outputs, labels.float())
@@ -572,6 +415,7 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     all_labels = torch.cat(all_labels, dim=0)
 
     return all_labels, all_outputs, total_loss
+
 
 def test(opt, melanoma_model_list, val_loader, tag="natural"):
     if melanoma_model_list is None or len(melanoma_model_list) == 0:
@@ -617,7 +461,6 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
         log_test(opt, metrics, tag=tag)
         wandb_test_log(metrics, tag=tag)
         print(f"Test Metrics ({tag}): {metrics}")
-
 
 
 
