@@ -95,7 +95,7 @@ class SupConLoss(nn.Module):
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.margin_threshold = margin_threshold
-        print(f"Using Supervised Contrastive Loss with temp={self.temperature}, margin={self.margin_threshold}")
+        
 
     def forward(self, features, labels):
         device = features.device
@@ -171,10 +171,14 @@ def melanoma_loss(opt, loader=None):
         print("Using SVM Hinge Loss")
         return SVMHingeLoss()
     elif loss_function == 'contrastive':
-        return SupConLoss(
-            temperature=opt['model'].get('contrastive_temperature', 0.07),
-            margin_threshold=opt['model'].get('contrastive_margin', 0.5)  # 👈 Add this to your YAML later!
+        temperature=opt['model'].get('contrastive_temperature', 0.07)
+        margin_threshold=opt['model'].get('contrastive_margin', 0.5)
+        loss = SupConLoss(
+            temperature=temperature,
+            margin_threshold=margin_threshold
         )
+        print(f"Using Supervised Contrastive Loss with temp={temperature}, margin={margin_threshold}")
+        return loss
     # If we got here then just use BCE
 
     bce_weights = opt['model'].get('bce_loss_weights', [1.0])

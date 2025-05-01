@@ -90,4 +90,3 @@ testing:
     patience: 10
     min_delta: 0.001
   threshold_value: 0.5 # Set 'auto' for automatically setting threshold, otherwise enter the number
-
