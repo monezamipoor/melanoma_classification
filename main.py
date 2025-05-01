@@ -194,22 +194,7 @@ def train(melanomamodel):
                 wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
                 # strip contrastive components if needed (unchanged)
-                if melanomamodel.opt['model']['loss_function'] == 'contrastive' and \
-                   epoch + 1 == melanomamodel.opt['training']['contrastive_epochs']:
-                    print("🧪 Removing contrastive components before saving...")
-                    melanomamodel.model.projector = None
-                    melanomamodel.model.use_contrastive_head = False
-                    melanomamodel.model.use_svm_head = False
-                    melanomamodel.model.training_phase = 'finetune'
-                    feature_dim = (melanomamodel.model.backbone.num_features
-                                  if hasattr(melanomamodel.model.backbone, 'num_features')
-                                  else 1280)
-                    melanomamodel.model.classifier = nn.Sequential(
-                        nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                        nn.Linear(feature_dim, 1)
-                    ).to(melanomamodel.device)
-                    melanomamodel.criterion = melanomamodel.criterion_second
-                    melanomamodel.opt['model']['loss_function'] = 'bce'
+                melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
 
                 checkpointmodel = save_checkpoint(
                     melanomamodel.opt,
@@ -252,22 +237,7 @@ def train(melanomamodel):
 
             wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
-            if melanomamodel.opt['model']['loss_function'] == 'contrastive' and \
-               epoch + 1 == melanomamodel.opt['training']['contrastive_epochs']:
-                print("🧪 Removing contrastive components before saving...")
-                melanomamodel.model.projector = None
-                melanomamodel.model.use_contrastive_head = False
-                melanomamodel.model.use_svm_head = False
-                melanomamodel.model.training_phase = 'finetune'
-                feature_dim = (melanomamodel.model.backbone.num_features
-                              if hasattr(melanomamodel.model.backbone, 'num_features')
-                              else 1280)
-                melanomamodel.model.classifier = nn.Sequential(
-                    nn.Dropout(melanomamodel.opt['model']['dropout_rate']),
-                    nn.Linear(feature_dim, 1)
-                ).to(melanomamodel.device)
-                melanomamodel.criterion = melanomamodel.criterion_second
-                melanomamodel.opt['model']['loss_function'] = 'bce'
+            melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
 
             savedmodel = save_checkpoint(
                 melanomamodel.opt,
