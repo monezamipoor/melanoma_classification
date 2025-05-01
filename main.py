@@ -30,12 +30,7 @@ import wandb
 from copy import deepcopy
 
 # Contrastive logic moved to contrastive_svm module
-from contrastive_svm import (
-    contrastive_train_batch,
-    contrastive_validate,
-    contrastive_validate_loss,
-    contrastive_test
-)
+from contrastive_svm import ContrastiveSVM
 
 #Uncomment to turn off wandb entirely for debugging only
 #wandb.init(mode="disabled")
@@ -67,13 +62,12 @@ class MelanomaTest:
 
         log_model(self.opt, self.model)
 
-
 class MelanomaTrainer:
     def __init__(self, opt):
         self.opt = opt
         print(opt)
         self.device = cuda_available(self.opt)
-
+        self.cengine = ContrastiveSVM(opt, self.device)
         # K-Fold 
         if opt['dataset'].get('use_groupkfold', False):
             self.fold_loaders = melanoma_train_dataloaders(opt)
@@ -289,15 +283,9 @@ def train(melanomamodel):
 
 
 def train_batch(melanomamodel, images, labels, epoch):
-    """
-    Wrapper that routes to contrastive or standard batch training.
-    """
-    loss_fn_name = melanomamodel.opt['model'].get('loss_function', 'bce').lower()
-    contrastive_epochs = melanomamodel.opt['training'].get('contrastive_epochs', 5)
-    use_contrastive = (loss_fn_name == 'contrastive') and (epoch < contrastive_epochs)
-
-    if use_contrastive:
-        return contrastive_train_batch(melanomamodel, images, labels, epoch)
+    lf = melanomamodel.opt['model'].get('loss_function','bce').lower()
+    if lf == 'contrastive' and epoch < melanomamodel.opt['training']['contrastive_epochs']:
+        return melanomamodel.cengine.train_batch(melanomamodel, images, labels, epoch)
 
     melanomamodel.optimizer.zero_grad()
     if isinstance(images, (list, tuple)):
@@ -317,12 +305,9 @@ def validate(m, val_loader, epoch=1):
     """
     Wrapper that routes to contrastive or standard validation.
     """
-    loss_fn_name = m.opt['model']['loss_function']
-    contrastive_epochs = m.opt['training']['contrastive_epochs']
-    use_contrastive = (loss_fn_name == 'contrastive') and (epoch < contrastive_epochs)
-
-    if use_contrastive:
-        return contrastive_validate(m, val_loader, epoch)
+    lf = m.opt['model']['loss_function']
+    if lf == 'contrastive' and epoch < m.opt['training']['contrastive_epochs']:
+        return m.cengine.validate(m, val_loader, epoch)
 
     device = m.device
     m.model.eval()
@@ -357,7 +342,7 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     Wrapper for contrastive or standard validate_loss.
     """
     if melanomamodel.opt['model']['loss_function'] == 'contrastive':
-        return contrastive_validate_loss(melanomamodel, total_loss, val_loader, description)
+        return melanomamodel.cengine.validate_loss(melanomamodel, total_loss, val_loader, description)
 
     device = melanomamodel.device
     melanomamodel.model.eval()
@@ -383,7 +368,8 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
     Wrapper to route to contrastive or standard test.
     """
     if opt['model']['loss_function'] == 'contrastive':
-        return contrastive_test(opt, melanoma_model_list, val_loader, tag)
+        return melanoma_model_list[0].trainer.cengine.test(
+           opt, melanoma_model_list, val_loader, tag)
 
     if melanoma_model_list is None or len(melanoma_model_list) == 0:
         print("Test: No models to test. Exiting...")
@@ -482,7 +468,7 @@ def main():
     # Test Loop begins
     melanomatests = []
     for model in testmodels:
-        melanomatests.append(MelanomaTest(opt, model))  # Creates the test loader and loads model
+        melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
 
     print("=== Natural test ===")
     test(opt, melanomatests, melanomatests[0].val_loader, tag="natural")
