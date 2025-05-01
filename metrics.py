@@ -1,3 +1,6 @@
+import os
+import time
+
 import torch
 from sentry_sdk.utils import epoch
 
@@ -15,6 +18,7 @@ from torchmetrics.functional.classification import (
     binary_confusion_matrix
 )
 
+import utils
 from debug import threshold_eval_metrics
 from wandb_helper import wandb_log_cm
 
@@ -38,7 +42,7 @@ def find_best_threshold(y_true, y_probs):
 # ... so we go with the lowest common denominator for all of our test choices. Which is probabilities.
 #
 
-def evaluate_metrics(opt, probs, target, epoch):
+def evaluate_metrics(opt, probs, target, epoch, tag=None):
 
     #debug - Uncomment to show spread of probs in debug
     #threshold_eval_metrics(probs, target)
@@ -108,21 +112,20 @@ def evaluate_metrics(opt, probs, target, epoch):
 
             # TODO break out wandb and local display of CMs. Also save CM as part of logging rather than plot them
             wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
-            #visualize_confusion_matrix(cm, classlabels, "Confusion Matrix - Epoch: " + str(epoch))
-        elif metric_lower == 'roc':
-            fpr, tpr, roc_thresholds = roc_curve(target_int.numpy(), probs.numpy())
-            roc_auc_val = auc(fpr, tpr)
-            results['ROC'] = {
-                'fpr': fpr,
-                'tpr': tpr,
-                'thresholds': roc_thresholds,
-                'roc_auc': roc_auc_val
-            }
-            visualize_roc_curve(fpr, tpr, roc_auc_val)
-    
+
+    # Log the confusion matrix and ROCAUC for the Test epoch only
+    if tag is not None:
+        # Plot and log the Confusion Matrix
+        visualize_confusion_matrix(confusion_matrix(target_int.numpy(), preds_binary.numpy()), classlabels, "Confusion Matrix - Test: " + tag, tag)
+
+        # And the ROC
+        fpr, tpr, roc_thresholds = roc_curve(target_int.numpy(), probs.numpy())
+        roc_auc_val = auc(fpr, tpr)
+        visualize_roc_curve(fpr, tpr, roc_auc_val, tag)
+
     return results
 
-def visualize_confusion_matrix(cm, labels=['Negative', 'Positive'], title='Confusion Matrix'):
+def visualize_confusion_matrix(cm, labels=['Negative', 'Positive'], title='Confusion Matrix', tag=''):
     
     plt.figure(figsize=(6, 4))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -132,9 +135,16 @@ def visualize_confusion_matrix(cm, labels=['Negative', 'Positive'], title='Confu
     plt.xlabel('Predicted')
     plt.title(title)
     plt.tight_layout()
-    plt.show()
 
-def visualize_roc_curve(fpr, tpr, roc_auc, title='ROC Curve'):
+
+    rundir = utils.run_dir()
+
+    filepth = os.path.join(rundir, f"confusion_matrix_{tag}_{time.strftime('%Y%m%d-%H%M%S')}.png")
+    plt.savefig(filepth, dpi=300)
+    plt.close()
+
+
+def visualize_roc_curve(fpr, tpr, roc_auc, title='ROC Curve', tag=''):
     plt.figure(figsize=(6, 4))
     plt.plot(fpr, tpr, color='darkorange', lw=2,
              label='ROC curve (area = %0.2f)' % roc_auc)
@@ -146,4 +156,9 @@ def visualize_roc_curve(fpr, tpr, roc_auc, title='ROC Curve'):
     plt.title(title)
     plt.legend(loc="lower right")
     plt.tight_layout()
-    plt.show()
+
+    rundir = utils.run_dir()
+
+    filepth = os.path.join(rundir, f"ROC_{tag}_{time.strftime('%Y%m%d-%H%M%S')}.png")
+    plt.savefig(filepth, dpi=300)
+    plt.close()

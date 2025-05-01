@@ -382,7 +382,7 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
         write_kaggle_csv(opt, val_loader.dataset.files, probabilities, tag=tag)
     else:
         print("Evaluating test metrics...")
-        metrics = evaluate_metrics(opt, probabilities, all_labels, epoch="Test")
+        metrics = evaluate_metrics(opt, probabilities, all_labels, epoch="Test", tag=tag)
         log_test(opt, metrics, tag=tag)
         wandb_test_log(metrics, tag=tag)
         print(f"Test Metrics ({tag}): {metrics}")
