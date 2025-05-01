@@ -152,7 +152,7 @@ class MelanomaTrainer:
                 for p in head.parameters():
                     p.requires_grad = True
 
-    print(f"Backbone layers frozen?= {freeze}")
+        print(f"Backbone layers frozen?= {freeze}")
 
 
 def train(melanomamodel):
