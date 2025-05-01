@@ -356,14 +356,24 @@ def melanoma_train_dataloaders(opt):
         train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
         val_df = dataset[dataset['tfrecord'].isin([10, 11])]
         
-        # Assuming your CSV really does have 'image_name' (no .jpg)
         train_files = (train_df['image_name'] + '.jpg').tolist()
         train_classes = train_df['target'].tolist()
-        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
         
-        # train_sampler = stratified_sampler(train_classes)
         val_files = (val_df['image_name'] + '.jpg').tolist()
         val_classes = val_df['target'].tolist()
+        
+        if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:
+            oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
+            print("Applying upsampling to the training set with rate", oversampling_rate)
+            train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate)
+        
+        if opt['dataset'].get('downsampling_rate', 1.0) < 1.0:
+            downsampling_rate = opt['dataset'].get('downsampling_rate', 1.0)
+            print("Applying downsampling to the training set with rate", downsampling_rate)
+            train_files, train_classes = down_sampling(train_files, train_classes, downsampling_rate)
+        print(f"After downsampling: {len(train_files)}")
+
+        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)        
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
 
         if opt['dataset'].get('use_stratified_sampler', False):
