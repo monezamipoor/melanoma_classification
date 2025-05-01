@@ -177,6 +177,8 @@ def train(melanomamodel):
                     total_loss += loss.item()
                     loop.set_postfix(loss=loss.item())
 
+                melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
+
                 avg_loss = total_loss / len(train_loader)
                 val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
                 val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
@@ -194,7 +196,7 @@ def train(melanomamodel):
                 wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
                 # strip contrastive components if needed (unchanged)
-                melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
+                
 
                 checkpointmodel = save_checkpoint(
                     melanomamodel.opt,
@@ -221,6 +223,8 @@ def train(melanomamodel):
                 total_loss += loss.item()
                 loop.set_postfix(loss=loss.item())
 
+            melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)    
+
             avg_loss = total_loss / len(melanomamodel.train_loader)
             val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)
             val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch)
@@ -237,7 +241,7 @@ def train(melanomamodel):
 
             wandb_val_log(avg_loss, val_loss, val_loss_bal, val_metrics, val_metrics_bal)
 
-            melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
+           
 
             savedmodel = save_checkpoint(
                 melanomamodel.opt,
