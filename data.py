@@ -422,7 +422,7 @@ def melanoma_train_dataloaders(opt):
             shuffle=False,
             num_workers=2
         )
-        balanced_val_ds = balanced_val(val_dataset)
+        val_loader_balanced = balanced_val(val_dataset)
         val_balanced_loader = DataLoader(
             balanced_val_ds,
             batch_size=opt['dataset']['batch_size'],
@@ -437,7 +437,7 @@ def melanoma_train_dataloaders(opt):
         print("Balanced Val Balance:")
         utils.check_dataset_balance(balanced_val_ds)
 
-        return train_loader, val_loader
+        return train_loader, val_loader, val_loader_balanced
 
 
 def melanoma_test_dataloaders(opt):
