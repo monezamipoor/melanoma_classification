@@ -6,6 +6,7 @@ from utils import (
     save_checkpoint, soft_voting_probs_from_logits,
     write_kaggle_csv, log_results, log_test
 )
+import torch.nn as nn
 from metrics import evaluate_metrics
 from wandb_helper import wandb_watch, wandb_val_log, wandb_test_log
 
@@ -45,7 +46,9 @@ class ContrastiveSVM:
             logits_mask = torch.eye(mask.size(0), device=mask.device)
             exp_sim = torch.exp(sim) * (1 - logits_mask)
             log_prob = sim - torch.log(exp_sim.sum(1, keepdim=True) + 1e-9)
-            loss = - (mask * log_prob).sum(1).mean()
+            pos_per_row = mask.sum(1) + 1e-9
+            mean_log_prob_pos = (mask * log_prob).sum(1) / pos_per_row
+            loss = - mean_log_prob_pos.mean()
 
         loss.backward()
         trainer.optimizer.step()
@@ -124,3 +127,29 @@ class ContrastiveSVM:
             write_kaggle_csv(opt, val_loader.dataset.files, probs, tag=tag)
         else:
             mets=evaluate_metrics(opt, probs, ground, epoch="Test"); log_test(opt,mets,tag=tag); wandb_test_log(mets,tag=tag)
+
+    def on_contrastive_phase_end(self, trainer, epoch):
+
+        ce = trainer.opt['training']['contrastive_epochs']
+        if trainer.opt['model']['loss_function'] == 'contrastive' and epoch + 1 == ce:
+            print("🧪 Removing contrastive components before saving...")
+            # remove projector & contrastive heads
+            trainer.model.projector = None
+            trainer.model.use_contrastive_head = False
+            trainer.model.use_svm_head = False
+            trainer.model.training_phase = 'finetune'
+
+            # rebuild final classifier
+            feature_dim = (
+                trainer.model.backbone.num_features
+                if hasattr(trainer.model.backbone, 'num_features')
+                else 1280
+            )
+            trainer.model.classifier = nn.Sequential(
+                nn.Dropout(trainer.opt['model']['dropout_rate']),
+                nn.Linear(feature_dim, 1)
+            ).to(trainer.device)
+
+            # switch loss to the second (BCE) criterion
+            trainer.criterion = trainer.criterion_second
+            trainer.opt['model']['loss_function'] = 'bce'
