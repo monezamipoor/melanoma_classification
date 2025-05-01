@@ -301,7 +301,7 @@ def validate(m, val_loader, epoch=1):
             total_loss += loss.item()
             all_outputs.append(probs.cpu())
             all_labels.append(labels.cpu())
-
+            
     avg_loss = total_loss / len(val_loader)
     all_outputs = torch.cat(all_outputs, dim=0)
     all_labels = torch.cat(all_labels, dim=0)

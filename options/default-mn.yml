@@ -3,8 +3,8 @@ dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
   n_splits: 3
-  downsampling_rate: 0.1 # Keep X% of class 0
-  oversampling_rate: 1 # Leave at 1 to disable
+  downsampling_rate: 0.3 # Keep X% of class 0
+  oversampling_rate: 5 # Leave at 1 to disable
   augmentations:
     #horizontal_flip: 0.2
     vertical_flip: 0.2
@@ -47,7 +47,8 @@ model:
   dropout_rate: 0.2
   freeze_backbone: false
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
-  loss_function: "bce" # 'bce', 'focal', 'dice'
+  mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
+  loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
   bce_loss_weights: [5.0]
   dice_loss_smooth: 0.000001
   focal_loss:
@@ -56,6 +57,9 @@ model:
     reduction: "mean"
   hybrid:
     enabled: False
+  contrastive_temperature: 0.07
+  contrastive_margin: 0.5
+  contrastive_svm_lambda: 0.1
 
 # Training Arguments
 training:
@@ -64,9 +68,8 @@ training:
   scheduler: "none" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
-
-  epochs: 2
-
+  contrastive_epochs: 0
+  epochs: 20
   warmup_epochs: 0
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
@@ -86,4 +89,4 @@ testing:
   early_stopping:
     patience: 10
     min_delta: 0.001
-  threshold_value: 'auto' # Set 'auto' for automatically setting threshold, otherwise enter the number
+  threshold_value: 0.5 # Set 'auto' for automatically setting threshold, otherwise enter the number
