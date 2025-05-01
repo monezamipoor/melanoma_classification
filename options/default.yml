@@ -40,7 +40,7 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.3
-  freeze_backbone: false
+  freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier (freeze backbone must be true)
   loss_function: "bce_auto" # 'bce', 'focal', 'dice'
   bce_loss_weights: [1.0]
@@ -59,10 +59,10 @@ model:
 training:
   optimizer: "adamw" # Options: adam, sgd, adamw, adagrad, amsgrad
   learning_rate: 0.00001
-  scheduler: "none" # Options: cosine, step, reduce_on_plateau, none
+  scheduler: "cosine" # Options: cosine, step, reduce_on_plateau, none
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
-
+  freeze_backbone_epochs: 5
   epochs: 20
 
   warmup_epochs: 0
