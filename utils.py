@@ -7,6 +7,7 @@ import os
 import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.f2py.auxfuncs import throw_error
+import math
 
 EPOCH= 0
 rundir = None
@@ -120,6 +121,12 @@ def log_test(opt, metrics, tag="natural"):
     print(f"Test metrics logged to {log_filename}")
 
 def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
+    # utils.py
+    if not metrics:
+        # If metrics is empty, we are in contrastive phase -> SKIP checkpoint saving
+        print("Skipping checkpoint saving (no metrics yet in contrastive phase).")
+        return None
+
 
     if check_nested_key(opt, ['testing', 'model_save_strategy']) == False or check_nested_key(opt, ['testing', 'model_save_metrics']) == False:
         return None
@@ -256,6 +263,116 @@ def write_kaggle_csv(opt, images, probs, tag="natural"):
     fileout = os.path.join(log_dir, f"{opt['model']['backbone']}_{config_name}_predictions_{tag}.csv")
 
     df.to_csv(fileout, index=False)
+
+def soft_voting_probs_from_logits(ensemble_logits):
+    probs = torch.sigmoid(ensemble_logits)
+    avg_probs = probs.mean(dim=0)
+    return avg_probs
+
+# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
+def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
+
+    # Ensure the save directory exists
+    if not os.path.exists(save_dir):
+        os.makedirs(save_dir)
+
+    # Get one batch from the DataLoader. Assuming batch[0] contains the images.
+    batch = next(iter(loader))
+    images = batch[0]  # (B, C, H, W)
+
+    # Define the normalization parameters used in your transforms:
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+
+    imgs_denorm = []
+    for i in range(num_samples):
+        img = images[i].clone().cpu()
+        img = denormalize_image(img, imagenet_mean, imagenet_std)
+        # Convert from (C, H, W) to (H, W, C)
+        img_np = img.permute(1, 2, 0).numpy()
+        # Clip values to [0, 1] for display purposes
+        img_np = np.clip(img_np, 0, 1)
+        imgs_denorm.append(img_np)
+
+    # Create a grid plot for the samples
+    fig, axes = plt.subplots(1, num_samples, figsize=(20, 5))
+    for idx, ax in enumerate(axes):
+        ax.imshow(imgs_denorm[idx])
+        ax.set_title(f"Sample {idx+1}")
+        ax.axis("off")
+    plt.suptitle("Augmented Samples")
+
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+
+    # Save the figure to the unique file path
+    plt.savefig(save_path, bbox_inches='tight')
+    plt.close(fig)
+    print(f"Saved augmented samples to {save_path}")
+
+
+def denormalize_image(tensor, mean, std):
+
+    for t, m, s in zip(tensor, mean, std):
+        t.mul_(s).add_(m)
+    return tensor
+
+def denormalize_image(tensor, mean, std):
+    """Undo ImageNet normalization on a single C×H×W tensor."""
+    for t, m, s in zip(tensor, mean, std):
+        t.mul_(s).add_(m)
+    return tensor
+
+def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
+    # 1) collect exactly num_samples images
+    imgs = []
+    for batch in loader:
+        batch_imgs = batch[0]    # assumes loader yields (images, labels)
+        for img in batch_imgs:
+            imgs.append(img.clone().cpu())
+            if len(imgs) >= num_samples:
+                break
+        if len(imgs) >= num_samples:
+            break
+
+    if not imgs:
+        print("  No images found in loader!")
+        return
+    imgs = imgs[:num_samples]
+
+    # 2) denormalize each
+    imagenet_mean = [0.485, 0.456, 0.406]
+    imagenet_std  = [0.229, 0.224, 0.225]
+    imgs_denorm = []
+    for img in imgs:
+        img = denormalize_image(img, imagenet_mean, imagenet_std)
+        img_np = img.permute(1, 2, 0).numpy()
+        imgs_denorm.append(np.clip(img_np, 0, 1))
+
+    # 3) set up grid
+    nrows = math.ceil(num_samples / ncols)
+    fig, axes = plt.subplots(nrows, ncols, figsize=(ncols*2, nrows*2))
+    axes = axes.flatten()
+
+    for idx, ax in enumerate(axes):
+        if idx < len(imgs_denorm):
+            ax.imshow(imgs_denorm[idx])
+        ax.axis("off")
+    plt.suptitle("Augmented Samples", y=1.02)
+
+    # 4) save or show
+    if save_dir:
+        os.makedirs(save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_path = os.path.join(save_dir, f"augmented_samples_{timestamp}.png")
+        plt.savefig(save_path, bbox_inches='tight')
+        plt.close(fig)
+        print(f"Saved augmented samples to {save_path}")
+    else:
+        plt.show()
+        plt.close(fig)
+
 
     print(f"Kaggle CSV saved to {fileout}")
 
