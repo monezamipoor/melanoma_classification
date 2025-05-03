@@ -275,7 +275,10 @@ def train_batch(melanomamodel, images, labels, epoch):
     images = images.to(melanomamodel.device)
     labels = labels.to(melanomamodel.device)
 
-    preds = melanomamodel.model(images)
+    if lf == 'contrastive':
+        preds = melanomamodel.model(images, return_projection=True)
+    else:
+        preds = melanomamodel.model(images)
     loss = melanomamodel.criterion(preds, labels.float())
     loss.backward()
     melanomamodel.optimizer.step()
