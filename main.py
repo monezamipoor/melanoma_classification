@@ -141,10 +141,18 @@ class MelanomaTrainer:
         else:
             return None
 
-    def freeze_backbone(self, freeze=False):
-        for param in list(self.model.parameters())[:-1]:
-            param.requires_grad = not freeze
-        print("Backbone layers frozen?= " + str(freeze))
+    def freeze_backbone(self, freeze: bool = False):
+        # 1) Freeze / unfreeze the backbone
+        for p in self.model.backbone.parameters():
+            p.requires_grad = not freeze
+    
+        # 2) Always keep the heads trainable
+        for head in (self.model.classifier, self.model.svm_head, self.model.projector):
+            if head is not None:
+                for p in head.parameters():
+                    p.requires_grad = True
+
+        print(f"Backbone layers frozen?= {freeze}")
 
 
 def train(melanomamodel):
@@ -267,7 +275,10 @@ def train_batch(melanomamodel, images, labels, epoch):
     images = images.to(melanomamodel.device)
     labels = labels.to(melanomamodel.device)
 
-    preds = melanomamodel.model(images)
+    if lf == 'contrastive':
+        preds = melanomamodel.model(images, return_projection=True)
+    else:
+        preds = melanomamodel.model(images)
     loss = melanomamodel.criterion(preds, labels.float())
     loss.backward()
     melanomamodel.optimizer.step()
