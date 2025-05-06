@@ -285,7 +285,9 @@ def down_sampling(files, classes, downsampling_rate=1.0):
 
 def melanoma_train_dataloaders(opt):
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
-    files = dataset['image_name'].values + '.jpg'
+    valid_groups = [0,1,2,3,4,5,6,7,8,9,10,11]
+    dataset= dataset[dataset['tfrecord'].isin(valid_groups)].reset_index(drop=True)
+    files = dataset['image_name'] + '.jpg'
     classes = dataset['target'].values
 
     if opt['dataset'].get('use_groupkfold', False):
@@ -348,24 +350,32 @@ def melanoma_train_dataloaders(opt):
             utils.check_dataset_balance(val_dataset_fold_balanced)
 
         return fold_loaders
+# ------------------------------------ Simple split by tfrecord ------------------------------------
     else:
-        train_files, val_files, train_classes, val_classes = train_test_split(
-            files, classes, train_size=0.8, test_size=0.2, stratify=classes, random_state=42
-        )
-        print(f"Original training set size: {len(train_files)}")
+        # Simple split by tfrecord: groups 0-9 for training, 10-11 for validation
+        train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
+        val_df = dataset[dataset['tfrecord'].isin([10, 11])]
+        
+        train_files = (train_df['image_name'] + '.jpg').tolist()
+        train_classes = train_df['target'].tolist()
+        
+        val_files = (val_df['image_name'] + '.jpg').tolist()
+        val_classes = val_df['target'].tolist()
+        
         if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:
             oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
             print("Applying upsampling to the training set with rate", oversampling_rate)
             train_files, train_classes = up_sampling(train_files, train_classes, oversampling_rate)
+        
         if opt['dataset'].get('downsampling_rate', 1.0) < 1.0:
             downsampling_rate = opt['dataset'].get('downsampling_rate', 1.0)
             print("Applying downsampling to the training set with rate", downsampling_rate)
             train_files, train_classes = down_sampling(train_files, train_classes, downsampling_rate)
         print(f"After downsampling: {len(train_files)}")
-        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
-        # train_sampler = stratified_sampler(train_classes)
+
+        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)        
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
-        
+
         if opt['dataset'].get('use_stratified_sampler', False):
             sampler = stratified_sampler(train_dataset.classes)
             train_loader = DataLoader(train_dataset, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)

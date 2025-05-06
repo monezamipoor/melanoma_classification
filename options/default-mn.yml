@@ -45,7 +45,7 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
-  freeze_backbone: false
+  freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
@@ -63,9 +63,9 @@ model:
 
 # Training Arguments
 training:
-  optimizer: "adam" # Options: adam, sgd, adamw, adagrad, amsgrad
+  optimizer: "adamw" # Options: adam, sgd, adamw, adagrad, amsgrad
   learning_rate: 0.001
-  scheduler: "none" # Options: cosine, step, reduce_on_plateau
+  scheduler: "cosine" # Options: cosine, step, reduce_on_plateau
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
   contrastive_epochs: 0
@@ -74,6 +74,7 @@ training:
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
+  freeze_backbone_epochs: 5
 
 # Testing and Logging Arguments
 testing:
