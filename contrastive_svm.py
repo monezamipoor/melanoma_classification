@@ -25,34 +25,31 @@ class ContrastiveSVM:
 
     def train_batch(self, trainer, images, labels, epoch):
         trainer.optimizer.zero_grad()
+
         x1, x2 = images
-        x1, x2, labs = x1.to(self.device), x2.to(self.device), labels.to(self.device)
+        x1, x2 = x1.to(self.device), x2.to(self.device)
+        labs = labels.to(self.device)
+
         f1 = trainer.model(x1, return_features=True)
         f2 = trainer.model(x2, return_features=True)
 
         if trainer.opt['model'].get('use_contrastive_svm', False):
             o1 = trainer.model.svm_head(f1).squeeze()
             o2 = trainer.model.svm_head(f2).squeeze()
-            out = torch.cat([o1, o2], 0);
-            lab = torch.cat([labs, labs], 0)
+            out = torch.cat([o1, o2], dim=0)
+            lab = torch.cat([labs, labs], dim=0)
             loss = self.svm_loss(out, lab)
         else:
             p1 = F.normalize(trainer.model.projector(f1), dim=1)
             p2 = F.normalize(trainer.model.projector(f2), dim=1)
-            emb = torch.cat([p1, p2], 0)
-            lab = torch.cat([labs, labs], 0)
-            sim = emb @ emb.T / self.temp
-            mask = (lab.unsqueeze(0) == lab.unsqueeze(1)).float()
-            logits_mask = torch.eye(mask.size(0), device=mask.device)
-            exp_sim = torch.exp(sim) * (1 - logits_mask)
-            log_prob = sim - torch.log(exp_sim.sum(1, keepdim=True) + 1e-9)
-            pos_per_row = mask.sum(1) + 1e-9
-            mean_log_prob_pos = (mask * log_prob).sum(1) / pos_per_row
-            loss = - mean_log_prob_pos.mean()
+            emb = torch.cat([p1, p2], dim=0)
+            lab = torch.cat([labs, labs], dim=0)
+            loss = self.supcon_loss(emb, lab)  # <-- use same as validation
 
         loss.backward()
         trainer.optimizer.step()
         return loss
+
 
     def validate(self, trainer, val_loader, epoch):
         in_cl = trainer.opt['model']['loss_function']=='contrastive' and epoch<trainer.opt['training']['contrastive_epochs']
