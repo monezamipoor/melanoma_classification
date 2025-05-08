@@ -72,6 +72,9 @@ class MelanomaTrainer:
         if opt['dataset'].get('use_groupkfold', False):
             self.fold_loaders = melanoma_train_dataloaders(opt)
             self.is_kfold = True
+
+            self.train_loader, self.val_loader, self.val_loader_balanced = None, None, None
+
         else:
             self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
             self.is_kfold = False
@@ -155,6 +158,30 @@ class MelanomaTrainer:
         print(f"Backbone layers frozen?= {freeze}")
 
 
+    def setup_training(self, train_loader):
+        """Common initializer for criterion, optimizer, scheduler, scaler."""
+        lf = self.opt['model'].get('loss_function', 'bce').lower()
+    
+        if lf == 'contrastive':
+            self.criterion = melanoma_loss(self.opt, train_loader).to(self.device)
+    
+            # BCE loss for the fine-tune/classifier head
+            bce_opt = deepcopy(self.opt)
+            bce_opt['model']['loss_function'] = 'bce'
+            self.criterion_second = melanoma_loss(bce_opt, train_loader).to(self.device)
+        else:
+            self.criterion = melanoma_loss(self.opt, train_loader).to(self.device)
+    
+        self.optimizer = self.get_optimizer()
+        self.scheduler = self.get_scheduler()
+        self.scaler = amp.GradScaler() if self.opt['training']['mixed_precision'] else None
+        self.best_metrics = {metric: float('-inf') for metric in self.opt['testing']['model_save_metrics']}
+    
+        print(f"Training setup complete with loss function: {lf}")
+
+
+
+
 def train(melanomamodel):
     print("Starting Training")
     wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
@@ -172,6 +199,7 @@ def train(melanomamodel):
             val_loader = fold_data['val_loader']
             val_loader_balanced = fold_data['val_loader_balanced']
 
+            melanomamodel.setup_training(melanomamodel.fold_loaders)
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
             modeltokeep = None
 
