@@ -1,3 +1,13 @@
+'''
+main.py - Contains train, val, test loop logic and model instantiation code
+train and test executed with a <CONFIG>.yml file sourced from ./options folder. E.g.
+    python main.py -o my_config.yml
+
+test only with a saved model (relative path) via -s flag e.g.
+    python main.py -o my_config.yml -s logs/<my_trained_model>/checkpoints/<my_saved_model>.pth
+'''
+
+
 import argparse
 import yaml
 import os
@@ -35,7 +45,7 @@ from contrastive_svm import ContrastiveSVM
 #Uncomment to turn off wandb entirely for debugging only
 #wandb.init(mode="disabled")
 
-
+# Builds a object that holds all the model, optimiser, dataloaders etc for a Test run
 class MelanomaTest:
     def __init__(self, opt, testmodel):
         self.opt = opt
@@ -43,18 +53,21 @@ class MelanomaTest:
 
         self.device = cuda_available(self.opt)
 
+        # Instantiate the dataloaders for test
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
         self.is_kfold = False
 
-        if opt['model']['hybrid'].get('enabled', False):           
+        # Instantiate a hybrid model or standard model as appropriate.
+        if opt['model']['hybrid'].get('enabled', False):
             self.model = test_hybrid_model(opt, testmodel).to(self.device)
             print("Using Hybrid Model")
         else:                                                      
             self.model = test_melanoma_model(opt, testmodel).to(self.device)
 
-        self.model_path = testmodel
+        self.model_path = testmodel         # Path to saved model
         self.criterion = melanoma_loss(opt).to(self.device)
 
+        # Create test metrics object to record output.
         self.best_metrics = {metric: float('-inf') for metric in opt['testing']['model_save_metrics']}
 
         self.logwandb = wandb_login(opt)
@@ -62,13 +75,14 @@ class MelanomaTest:
 
         log_model(self.opt, self.model)
 
+# Builds a object that holds all the model, optimiser, dataloaders etc for a Train and validation run
 class MelanomaTrainer:
     def __init__(self, opt):
         self.opt = opt
         print(opt)
         self.device = cuda_available(self.opt)
         self.cengine = ContrastiveSVM(opt, self.device)
-        # K-Fold 
+        # Sets either the k-fold dataloaders or the standard run dataloaders (train/val)
         if opt['dataset'].get('use_groupkfold', False):
             self.fold_loaders = melanoma_train_dataloaders(opt)
             self.is_kfold = True
@@ -79,12 +93,14 @@ class MelanomaTrainer:
             self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
             self.is_kfold = False
 
+        # Instantiate a hybrid model or standard model as appropriate.
         if opt['model']['hybrid'].get('enabled', False):
             print("Using Hybrid Model")
             self.model = train_hybrid_model(opt).to(self.device)
         else:
             self.model = train_melanoma_model(opt).to(self.device)
 
+        # Set the loss function based on YML config. Uses loss.py helper methods.
         loss_fn = opt['model'].get('loss_function', 'bce').lower()
         if loss_fn == 'contrastive':
             # 1) supervised‐contrastive (or hinge) during the pre‐training phase
@@ -98,6 +114,7 @@ class MelanomaTrainer:
             # single‐loss-mode
             self.criterion = melanoma_loss(opt, self.train_loader).to(self.device)
 
+        # Finalise optimiser, scheduler and metrics config for the model being built
         self.optimizer = self.get_optimizer()
         self.scheduler = self.get_scheduler()
         self.scaler = amp.GradScaler() if opt['training']['mixed_precision'] else None
@@ -106,6 +123,7 @@ class MelanomaTrainer:
         self.freeze_backbone_epochs = opt['training'].get('freeze_backbone_epochs', 0)
         self.backbone_frozen = self.freeze_backbone_epochs > 0
 
+        # Contrastive learning freezing logic
         if self.backbone_frozen and not (self.opt['model'].get('loss_function') == 'contrastive'):
             print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs...")
             self.freeze_backbone(True)
@@ -113,11 +131,13 @@ class MelanomaTrainer:
         self.logwandb = wandb_login(opt)
         print("Wandb: ", self.logwandb)
 
+        # Write model to the logs folder for posterity
         log_model(self.opt, self.model)
 
     def reset_metrics(self):
         return {metric: float('-inf') for metric in self.opt['testing']['model_save_metrics']}
 
+    # Optimizer loading code based on config
     def get_optimizer(self):
         if self.opt['training']['optimizer'] == 'adam':
             return optim.Adam(self.model.parameters(), lr=self.opt['training']['learning_rate'])
@@ -130,6 +150,7 @@ class MelanomaTrainer:
         elif self.opt['training']['optimizer'] == 'amsgrad':
             return optim.Adam(self.model.parameters(), lr=self.opt['training']['learning_rate'], amsgrad=True)
 
+    # Set scheduler from config
     def get_scheduler(self):
         if self.opt['training']['scheduler'] == 'cosine':
             return torch.optim.lr_scheduler.CosineAnnealingLR(self.optimizer, T_max=self.opt['training']['epochs'])
@@ -156,8 +177,7 @@ class MelanomaTrainer:
                     p.requires_grad = True
 
         print(f"Backbone layers frozen?= {freeze}")
-
-
+        
     def setup_training(self, train_loader):
         """Common initializer for criterion, optimizer, scheduler, scaler."""
         lf = self.opt['model'].get('loss_function', 'bce').lower()
@@ -179,19 +199,18 @@ class MelanomaTrainer:
     
         print(f"Training setup complete with loss function: {lf}")
 
-
-
-
 def train(melanomamodel):
     print("Starting Training")
     wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
     testmodels = []
 
+    # K-FOLD loop
     if melanomamodel.is_kfold:
         for fold_data in melanomamodel.fold_loaders:
             fold_idx = fold_data['fold']
             print(f"\n[INFO] Starting Fold {fold_idx}")
 
+            # Uses a model PER fold rather than a global model. Instantiated here.
             melanomamodel.model = train_melanoma_model(melanomamodel.opt).to(melanomamodel.device)
             melanomamodel.best_metrics = melanomamodel.reset_metrics()
 
@@ -203,6 +222,7 @@ def train(melanomamodel):
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
             modeltokeep = None
 
+            # Loop trainng for each epoch for the current fold
             for epoch in range(melanomamodel.opt['training']['epochs']):
                 melanomamodel.model.train()
                 total_loss = 0.0
@@ -215,10 +235,13 @@ def train(melanomamodel):
 
                 melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)
 
+                # Validatation loop for the fold epoch
                 avg_loss = total_loss / len(train_loader)
                 val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+                # Calculates validation metrics for both natural and balanced test sets.
                 val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
 
+                # Update the optimiser if a scheduler is configured.
                 if melanomamodel.scheduler:
                     if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
                         melanomamodel.scheduler.step(val_loss)
@@ -233,7 +256,7 @@ def train(melanomamodel):
 
                 # strip contrastive components if needed (unchanged)
                 
-
+                # Save our checkpoint model. Note checkpoint saving is based on metric and save approach (e.g. 'best auc')
                 checkpointmodel = save_checkpoint(
                     melanomamodel.opt,
                     melanomamodel.best_metrics,
@@ -245,25 +268,28 @@ def train(melanomamodel):
                 if checkpointmodel:
                     modeltokeep = checkpointmodel
 
+            # Keep the file name of the model to be used in the test loop (if the current epoch is better)
             if modeltokeep:
                 testmodels.append(modeltokeep)
 
+    # STANDARD TRAINING LOOP (not KFOLD)
     else:
         for epoch in range(melanomamodel.opt['training']['epochs']):
             melanomamodel.model.train()
             total_loss = 0
 
+            # Batching
             loop = tqdm(melanomamodel.train_loader, desc=f"Epoch {epoch+1}/{melanomamodel.opt['training']['epochs']}")
             for images, labels in loop:
-                loss = train_batch(melanomamodel, images, labels, epoch)
+                loss = train_batch(melanomamodel, images, labels, epoch)    # train_batch code reuse
                 total_loss += loss.item()
                 loop.set_postfix(loss=loss.item())
 
             melanomamodel.cengine.on_contrastive_phase_end(melanomamodel, epoch)    
 
             avg_loss = total_loss / len(melanomamodel.train_loader)
-            val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch)
-            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch)
+            val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch, tag='natural')
+            val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch, tag='balanced')
 
             if melanomamodel.scheduler:
                 if isinstance(melanomamodel.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -291,12 +317,13 @@ def train(melanomamodel):
 
     return testmodels
 
-
+# Resuable code block for training a batch.
 def train_batch(melanomamodel, images, labels, epoch):
     lf = melanomamodel.opt['model'].get('loss_function','bce').lower()
     if lf == 'contrastive' and epoch < melanomamodel.opt['training']['contrastive_epochs']:
         return melanomamodel.cengine.train_batch(melanomamodel, images, labels, epoch)
 
+    # Zero our gradients
     melanomamodel.optimizer.zero_grad()
     if isinstance(images, (list, tuple)):
         images = images[0]
@@ -315,8 +342,8 @@ def train_batch(melanomamodel, images, labels, epoch):
 
     return loss
 
-
-def validate(m, val_loader, epoch=1):
+# Validation loop code (usually called at the end of a training epoch)
+def validate(m, val_loader, epoch=1, tag='notag'):
     """
     Wrapper that routes to contrastive or standard validation.
     """
@@ -347,14 +374,14 @@ def validate(m, val_loader, epoch=1):
     all_outputs = torch.cat(all_outputs, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
     metrics = evaluate_metrics(m.opt, all_outputs, all_labels, epoch+1)
-    log_results(m.opt, metrics)
+    log_results(m.opt, metrics, phase='val', tag=tag)
 
     return avg_loss, metrics
 
-
-def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
+# Generates predictions for test loop. Called from test()
+def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
     """
-    Wrapper for contrastive or standard validate_loss.
+    Wrapper for contrastive or standard test.
     """
     if melanomamodel.opt['model']['loss_function'] == 'contrastive':
         return melanomamodel.cengine.validate_loss(melanomamodel, total_loss, val_loader, description)
@@ -377,8 +404,9 @@ def validate_loss(melanomamodel, total_loss, val_loader, description="[Val]"):
     all_labels = torch.cat(all_labels, dim=0)
     return all_labels, all_outputs, total_loss
 
-
-def test(opt, melanoma_model_list, val_loader, tag="natural"):
+# Executes the test loop.
+# Note that this supports both single and ensemble model testing (k-fold)
+def test(opt, melanoma_model_list, val_loader, tag="notag"):
     """
     Wrapper to route to contrastive or standard test.
     """
@@ -396,6 +424,7 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
     output_list = []
     all_labels = None
 
+    # Loop for each model to test (supports both standard and k-fold)
     for melanoma_test in melanoma_model_list:
         print(f"Test: Model {melanoma_test.model_path}")
         melanoma_test.model = melanoma_test.model.to(melanoma_test.device)
@@ -403,7 +432,8 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
 
         total_loss = 0.0
         with torch.no_grad():
-            labels, outputs, total_loss = validate_loss(melanoma_test, total_loss, val_loader, description='[Test]')
+            # Run the test predictions for the current model
+            labels, outputs, total_loss = test_outputs(melanoma_test, total_loss, val_loader, description='[Test]')
 
         if all_labels is None:
             all_labels = labels
@@ -415,9 +445,13 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
 
         output_list.append(outputs)
 
+    # This call to soft-voting is agnostic of k-fold or single models.
+    # In the case of single models it is a single dimension input and returns the probs without adjustment (x / 1 = x).
+    # In the case of ensemble the stack is multi-dimensional and soft voting returns the mean probability for each test position across the models
     ensemble_logits = torch.stack(output_list, dim=0)
     probabilities = soft_voting_probs_from_logits(ensemble_logits)
 
+    # Predict only supports predictions without GT labels (kaggle comp)
     if predictonly:
         print("Saving predictions only (no ground truth labels available).")
         write_kaggle_csv(opt, val_loader.dataset.files, probabilities, tag=tag)
@@ -428,7 +462,7 @@ def test(opt, melanoma_model_list, val_loader, tag="natural"):
         wandb_test_log(metrics, tag=tag)
         print(f"Test Metrics ({tag}): {metrics}")
 
-
+# Parses the YML file provided at command line
 def argument_parser():
     parser = argparse.ArgumentParser()
     parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
@@ -459,6 +493,8 @@ def set_seed(seed):
     torch.backends.cudnn.deterministic = True
     torch.backends.cudnn.benchmark = False  # Tradeoff: slows down but ensures deterministic behavior
 
+# Main method.
+# Calls training or test loops as appropriate.
 def main():
     set_seed(42)
     opt = argument_parser()
@@ -483,7 +519,7 @@ def main():
     # Test Loop begins
     melanomatests = []
     for model in testmodels:
-        melanomatests.append(MelanomaTest(opt, model))      # TODO Optimise the MelanomaTest creation to be at the point of first use in test cycle
+        melanomatests.append(MelanomaTest(opt, model))
 
     print("=== Natural test ===")
     test(opt, melanomatests, melanomatests[0].val_loader, tag="natural")
