@@ -83,42 +83,26 @@ def log_model(opt, model):
     df = pd.DataFrame(layers)
     df.to_csv(fileout, index=False)
 
-#TODO: Not-critical bug with k-fold that EPOCH is not reset between folds. Probably also worth writing a separate log for each fold
-def log_results(opt, metrics):
-    global EPOCH
-    # If epoch is not provided, increment the global EPOCH counter and set it in metrics.
-    if 'epoch' not in metrics or metrics.get('epoch') == 'N/A':
-        EPOCH += 1
-        metrics['epoch'] = EPOCH
-
+#TODO: Not-critical bug with k-fold that EPOCH is not reset between folds.
+def log_results(opt, metrics, phase='val', tag='notag'):
     # Get (or compute) the log filename once
-    log_filename = get_log_filename(opt)
+    log_dir = run_dir(opt)
+    log_filename = os.path.join(log_dir, f"log_{phase}_{tag}.csv")   # <== DIFFERENT FILE PER TAG
 
     # If the log file doesn't exist yet, write a header
     if not os.path.exists(log_filename):
         with open(log_filename, 'w') as f:
-            header = "Epoch\t" + "\t".join(metrics.keys()) + "\n"
+            header = ",".join(metrics.keys()) + "\n"
             f.write(header)
 
     # Append metrics for the current epoch
     with open(log_filename, 'a') as f:
-        f.write(str(metrics.get('epoch')) + "\t" +
-                "\t".join([str(v) for v in metrics.values()]) + "\n")
+        f.write(",".join([str(v) for v in metrics.values()]) + "\n")
 
-def log_test(opt, metrics, tag="natural"):
-    log_dir = run_dir(opt)
-    log_filename = os.path.join(log_dir, f"log_test_{tag}.txt")   # <== DIFFERENT FILE PER TAG
 
-    if not os.path.exists(log_filename):
-        with open(log_filename, 'w') as f:
-            header = "Test\t" + "\t".join(metrics.keys()) + "\n"
-            f.write(header)
+def log_test(opt, metrics, tag='notag'):
+    log_results(opt, metrics, phase='test', tag=tag)
 
-    with open(log_filename, 'a') as f:
-        f.write('Test' + "\t" +
-                "\t".join([str(v) for v in metrics.values()]) + "\n")
-
-    print(f"Test metrics logged to {log_filename}")
 
 def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
     # utils.py
@@ -374,14 +358,15 @@ def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
         plt.close(fig)
 
 
-    print(f"Kaggle CSV saved to {fileout}")
+    #print(f"Kaggle CSV saved to {fileout}")
 
+# Establish the mean of a tensor of logits. Principally for soft-voting.
+# Note that this also works for single model inputs as (x / 1 = x)
 def soft_voting_probs_from_logits(ensemble_logits):
     probs = torch.sigmoid(ensemble_logits)
     avg_probs = probs.mean(dim=0)
     return avg_probs
 
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
 
     # Ensure the save directory exists
