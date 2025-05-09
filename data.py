@@ -255,11 +255,20 @@ def balanced_val(dataset):
 
     balanced_files, balanced_classes = zip(*balanced_samples)
 
-    return MelanomaDataset(
+    new_ds = MelanomaDataset(
         dataset.opt, dataset.mode, dataset.root,
         list(balanced_files), list(balanced_classes),
         transforms_tuple=(dataset.base_transforms, dataset.class1_transforms)
     )
+
+    # ── Propagate metadata from the original ──
+    # For each balanced file, find its index in the original dataset.files
+    new_ds.metadata = [
+        dataset.metadata[ dataset.files.index(fname) ]
+        for fname in balanced_files
+    ]
+
+    return new_ds
 
   
 
