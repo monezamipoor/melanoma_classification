@@ -99,6 +99,7 @@ class MelanomaTrainer:
 
         else:
             self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
+            self.is_kfold = False
             # ——— DEBUG: peek at metadata ———
             batch = next(iter(self.train_loader))
             images, labels = batch
