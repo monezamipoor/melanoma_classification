@@ -103,6 +103,37 @@ class SupConLoss(nn.Module):
 
         return -mean_log_prob_pos.mean()
 
+class CombinedLoss(nn.Module):
+    """L = L1 + weight * L2"""
+    def __init__(self, opt):
+        super().__init__()
+        self.weight = opt['model'].get('loss_combination_weight', 1.0)
+        self.first_name = opt['model']['loss_function']
+        self.second_name = opt['model'].get('second_loss', '')
+        self.l1 = _make_loss(self.first_name, opt)
+        self.l2 = _make_loss(self.second_name, opt)
+        print(f"Using CombinedLoss: {self.first_name} + {self.weight}*{self.second_name}")
+
+    def forward(self, inputs, targets):
+        # Unpack features and logits if model returns a tuple
+        if isinstance(inputs, tuple) and len(inputs) == 2:
+            features, logits = inputs
+        else:
+            features = None
+            logits = inputs
+
+        # First loss always on logits
+        loss1 = self.l1(logits, targets)
+        # Second loss: feature-based for triplet/contrastive
+        if self.second_name.lower() in ['triplet', 'contrastive']:
+            if features is None:
+                raise ValueError("Features required for feature-based loss but not provided.")
+            loss2 = self.l2(features, targets)
+        else:
+            loss2 = self.l2(logits, targets)
+
+        return loss1 + self.weight * loss2
+
 # A helper to create the loss, it is useful for adding combined losses alongside single losses. 
 def _make_loss(name, opt, loader=None):
     """
@@ -132,11 +163,17 @@ def _make_loss(name, opt, loader=None):
         margin = opt['model'].get('contrastive_margin',    0.5)
         print(f"Using Supervised Contrastive Loss (temp={temp}, margin={margin})")
         return SupConLoss(temperature=temp, margin_threshold=margin)
+    
+    if name == 'triplet':
+        margin = opt['model'].get('triplet_margin', 1.0)
+        print(f"Using Triplet Margin Loss (margin={margin})")
+        return nn.TripletMarginLoss(margin=margin)
 
     if name == 'bce_auto' and loader is not None:
         print("Using bce_auto Loss")
         all_labels = []
-        for inputs, labels in loader:
+        # inputs, labels with the inputs being omitted
+        for _, labels in loader:
             all_labels.append(labels.cpu())
         all_labels = torch.cat(all_labels)
 
@@ -149,21 +186,6 @@ def _make_loss(name, opt, loader=None):
         return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     raise ValueError(f"Unknown loss function: {name}")
-
-
-class CombinedLoss(nn.Module):
-    """L = L1 + weight * L2"""
-    def __init__(self, opt):
-        super().__init__()
-        self.weight = opt['model'].get('loss_combination_weight', 1.0)
-        first  = opt['model']['loss_function']
-        second = opt['model']['second_loss']
-        self.l1 = _make_loss(first, opt)
-        self.l2 = _make_loss(second, opt)
-        print(f"Using CombinedLoss: {first} + {self.weight}*{second}")
-
-    def forward(self, inputs, targets):
-        return self.l1(inputs, targets) + self.weight * self.l2(inputs, targets)
 
 def melanoma_loss(opt, loader=None):
     if opt['model'].get('combined_loss', False):

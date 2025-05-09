@@ -334,7 +334,13 @@ def train_batch(melanomamodel, images, labels, epoch):
     if lf == 'contrastive':
         preds = melanomamodel.model(images, return_projection=True)
     else:
-        preds = melanomamodel.model(images)
+        combined = melanomamodel.opt['model'].get('combined_loss', False)
+        second = melanomamodel.opt['model'].get('second_loss', '').lower()
+        if combined and second in ['triplet', 'contrastive']:
+            # get both features and logits
+            preds = melanomamodel.model(images, return_features=True, return_logits=True)
+        else:
+            preds = melanomamodel.model(images)
 
     loss = melanomamodel.criterion(preds, labels.float())
     loss.backward()
