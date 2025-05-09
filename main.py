@@ -421,14 +421,6 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
             images, labels = images.to(device), labels.to(device)
             outputs = melanomamodel.model(images)
             loss = melanomamodel.criterion(outputs, labels.float())
-            try:
-                # try your configured loss (e.g. triplet)
-                loss = melanomamodel.criterion(outputs, labels.float())
-            except RuntimeError:
-                # on any runtime‐error (e.g. cdist on 1D), fall back to BCE
-                loss = torch.nn.functional.binary_cross_entropy_with_logits(
-                    outputs, labels.float()
-                    )
             total_loss += loss.item()
             all_outputs.append(outputs.cpu())
             all_labels.append(labels.cpu())
@@ -549,11 +541,14 @@ def main():
             print("Training complete. No Saved Model. Exiting.")
             return          # Nothing to test
 
-    # 🔄 Ensure contrastive mode is turned off during testing
-    if opt['model']['loss_function'] == 'contrastive':
-        print("🧪 Switching loss_function from 'contrastive' to 'bce' for test phase.")
+    # 🔄 Ensure feature-based modes are turned off during testing
+    if opt['model']['loss_function'] in ('contrastive', 'triplet'):
+        print(
+            "🧪 Switching loss_function from "
+            f"'{opt['model']['loss_function']}' to 'bce' for test phase."
+        )
         opt['model']['loss_function'] = 'bce'
-        opt['model']['mode'] = 'regular'  # Optional: depends on how your dataloader uses this
+        opt['model']['mode'] = 'regular'
 
     # Test Loop begins
     melanomatests = []
