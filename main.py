@@ -542,12 +542,20 @@ def main():
             return          # Nothing to test
 
     # 🔄 Ensure feature-based modes are turned off during testing
-    if opt['model']['loss_function'] in ('contrastive', 'triplet'):
+    if (
+        opt['model']['loss_function'] in ('contrastive', 'triplet')
+        or opt['model'].get('combined_loss', False)
+    ):
         print(
-            "🧪 Switching loss_function from "
-            f"'{opt['model']['loss_function']}' to 'bce' for test phase."
+            "🧪 Disabling feature-based loss for test phase; "
+            f"running pure 'bce' instead of "
+            f"'{opt['model'].get('loss_function', '')}'"
+            + (", combined" if opt['model'].get('combined_loss') else "")
         )
         opt['model']['loss_function'] = 'bce'
+        # drop any secondary triplet/focal/etc.
+        opt['model']['combined_loss'] = False
+        opt['model']['second_loss'] = None
         opt['model']['mode'] = 'regular'
 
     # Test Loop begins
