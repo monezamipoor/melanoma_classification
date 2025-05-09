@@ -419,9 +419,9 @@ def melanoma_train_dataloaders(opt):
         print(f"After downsampling: {len(train_files)}")
 
         train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
-        train_ds.metadata = train_meta        
+        train_dataset.metadata = train_meta        
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
-        val_ds.metadata   = val_meta
+        val_dataset.metadata   = val_meta
 
         if opt['dataset'].get('use_stratified_sampler', False):
             sampler = stratified_sampler(train_dataset.classes)
@@ -448,8 +448,25 @@ def melanoma_train_dataloaders(opt):
 
 
 def melanoma_test_dataloaders(opt):
-
+    # 1) Load Dataset:
     dataset = pd.read_csv(opt['dataset']['dataset_test_csv'])
+
+    # 2) Drop rows with missing metadata
+    dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+    dataset = dataset[dataset['sex'].str.strip()!='']
+    dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
+
+    # 3) Build metadata tensors
+    sex_map  = {'male':0, 'female':1}
+    site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+    meta_test = [
+        torch.tensor([
+            sex_map[row.sex],
+            float(row.age_approx),
+            float(site_map[row.anatom_site_general_challenge])
+        ], dtype=torch.float32)
+        for _, row in dataset.iterrows()
+    ]
 
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
 
@@ -469,6 +486,7 @@ def melanoma_test_dataloaders(opt):
         'val',
         opt['dataset']['dataset_test_path'], files, classes
     )
+    test_dataset.metadata = meta_test
 
     test_loader = DataLoader(
         test_dataset,
