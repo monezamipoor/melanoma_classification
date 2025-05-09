@@ -85,58 +85,39 @@ class SVMHingeLoss(nn.Module):
         return loss.mean()
 
 class SupConLoss(nn.Module):
-    """Supervised Contrastive Loss with Dynamic Hard Negative Mining."""
     def __init__(self, temperature=0.1, margin_threshold=0.5):
-        """
-        Args:
-            temperature (float): Temperature scaling for softmax.
-            margin_threshold (float): Cosine similarity threshold to select hard negatives.
-        """
         super(SupConLoss, self).__init__()
         self.temperature = temperature
         self.margin_threshold = margin_threshold
-        
 
     def forward(self, features, labels):
         device = features.device
         batch_size = features.shape[0]
 
         labels = labels.contiguous().view(-1, 1)  # [2N, 1]
-        mask = torch.eq(labels, labels.T).float().to(device)  # [2N, 2N]  Positive pairs
+        mask = torch.eq(labels, labels.T).float().to(device)  # [2N, 2N] Positive mask
 
-        # --- Compute cosine similarity matrix ---
         anchor_dot_contrast = torch.div(
             torch.matmul(features, features.T),
             self.temperature
-        )  # [2N, 2N]
+        )
 
-        # --- Remove self-contrast cases (diagonal) ---
         logits_mask = torch.ones_like(anchor_dot_contrast) - torch.eye(batch_size, device=device)
         anchor_dot_contrast = anchor_dot_contrast * logits_mask
+        with torch.no_grad():
+            cosine_sim = torch.matmul(F.normalize(features, dim=1), F.normalize(features, dim=1).T)
+            hard_neg_mask = (1 - mask) * (cosine_sim > self.margin_threshold).float()
 
-        # --- Dynamic Hard Negative Mining ---
-        # Compute cosine similarities (without temperature scaling)
-        cosine_sim = torch.matmul(F.normalize(features, dim=1), F.normalize(features, dim=1).T)
+        denom_mask = (mask + hard_neg_mask) * logits_mask
 
-        # Hard negatives: different label, but cosine similarity > margin
-        neg_mask = (1 - mask) * (cosine_sim > self.margin_threshold).float()
 
-        # --- Combine positive and selected negatives into final mask ---
-        combined_mask = mask + neg_mask
-
-        # --- Compute log_prob ---
-        exp_logits = torch.exp(anchor_dot_contrast) * logits_mask
+        exp_logits = torch.exp(anchor_dot_contrast) * denom_mask
         log_prob = anchor_dot_contrast - torch.log(exp_logits.sum(1, keepdim=True) + 1e-9)
 
-        # Only positive pairs + hard negatives contribute
-        mean_log_prob_pos = (combined_mask * log_prob).sum(1) / (combined_mask.sum(1) + 1e-9)
+        # Only positive pairs in numerator
+        mean_log_prob_pos = (mask * log_prob).sum(1) / (mask.sum(1) + 1e-9)
 
-        # --- Final loss ---
-        loss = -mean_log_prob_pos
-        loss = loss.mean()
-
-        return loss
-
+        return -mean_log_prob_pos.mean()
 
 def melanoma_loss(opt, loader=None):
 

@@ -1,8 +1,14 @@
+'''
+model_hybrid.py - Contains the model instantiation and forward pass code for a CNN / Transformer hybrid model
+Overrides the base MelanomaModel for these and instantiated from main.py
+'''
+
 import argparse
 import os
 
 import torch
 import torch.nn as nn
+from torch.fx import symbolic_trace
 import timm
 import yaml
 
@@ -10,6 +16,7 @@ from model import MelanomaModel
 from utils import log_model
 
 # CNN as a feature extractor >> Transformer with MH attention >> Binary Classifier
+# Model creation
 class HybridModel(MelanomaModel):
     def __init__(self, opt):
         super(HybridModel, self).__init__(opt)
@@ -18,8 +25,10 @@ class HybridModel(MelanomaModel):
         cfg_embed_dim = opt['model']['hybrid'].get('embed_dim', 256)
         cfg_num_transformer_layers = opt['model']['hybrid'].get('num_transformer_layers', 2)
         cfg_num_heads = opt['model']['hybrid'].get('num_heads', 4)
+        cfg_kernel_size = opt['model']['hybrid'].get('kernel_size', 1)
+        cfg_padding = cfg_kernel_size // 2  # Ensure output size is preserved
 
-        print(f"Transformer config: Embedded Dims={cfg_embed_dim}, Layers={cfg_num_transformer_layers}, Heads={cfg_num_heads}")
+        print(f"Transformer config: Embedded Dims={cfg_embed_dim}, Layers={cfg_num_transformer_layers}, Heads={cfg_num_heads}, Kernel={cfg_kernel_size}")
 
         # General model config
         backbone_name = opt['model']['backbone']            # Uses same param as CNN only variant to specify the CNN backbone
@@ -35,19 +44,25 @@ class HybridModel(MelanomaModel):
         self.feature_dim = self.backbone.feature_info[-1]['num_chs']
 
         # Convert the output feature map to the configutred embedding dimension (linear via kernel)
-        self.projection = nn.Conv2d(self.feature_dim, cfg_embed_dim, kernel_size=1)
+        self.projection = nn.Conv2d(self.feature_dim, cfg_embed_dim, kernel_size=cfg_kernel_size, padding=cfg_padding)
+        self.spatial_size = self.backbone.feature_info[-1]['reduction']
+        self.spatial_tokens = (224 // self.spatial_size) ** 2  # James: Fixed to 224 due to time constraints + Effnetb0 only CNN testing.
+
 
         # Trainable CLS
         self.cls_token = nn.Parameter(torch.randn(1, 1, cfg_embed_dim))
 
         # Positional encoding for 50 tokens (1 CLS + 49 spatial tokens). 1 batch x spatial 7*7 + CLS
-        self.pos_embedding = nn.Parameter(torch.randn(1, 50, cfg_embed_dim))
+        self.pos_embedding = nn.Parameter(torch.randn(1, 1 + self.spatial_tokens, cfg_embed_dim))
+
 
         # Create the transformer layers, takes the YML configured heads and layers as params
         encoder_layer = nn.TransformerEncoderLayer(d_model=cfg_embed_dim, nhead=cfg_num_heads, batch_first=True)
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=cfg_num_transformer_layers)
 
         # Classification
+        # Note that the use of Sequential in model definition incorrectly displays the classifier as between the CNN and Transformer in the log model util...
+        # ...Confirmed it is correctly called after the transformer via the symbolic_trace in the test harness method in this file.
         self.classifier = nn.Sequential(
             nn.Dropout(dropout_rate),
             nn.Linear(cfg_embed_dim, cfg_embed_dim // 2),
@@ -59,6 +74,7 @@ class HybridModel(MelanomaModel):
         if self.freeze_backbone:
             self.freeze_layers()
 
+    # Freezes n layers in the CNN model if set when model is instantiated.
     def freeze_layers(self):
         for param in self.backbone.parameters():
             param.requires_grad = False
@@ -73,6 +89,7 @@ class HybridModel(MelanomaModel):
         else:
             print("Only transformer and classifier head remains trainable.")
 
+    # Forward pass
     def forward(self, batchin):
         feats = self.backbone(batchin)[-1]  # Run the CNN head to produce feature maps from final layer - SHAPE = [B, C, H, W]
         proj = self.projection(feats)  # Run the linear conversion of features to embedding by batch - SHAPE = [B, embed_dim, H, W]
@@ -93,7 +110,7 @@ class HybridModel(MelanomaModel):
         out = logits.squeeze(1)  # Remove redundant dimension
         return out
 
-
+# For test loops from main.py
 def test_hybrid_model(opt, testmodel):
 
     model = HybridModel(opt)
@@ -104,13 +121,13 @@ def test_hybrid_model(opt, testmodel):
 
     return model
 
+# For train/val loops from main.py
 def train_hybrid_model(opt):
     model = HybridModel(opt)
     return model
 
-# TEST HARNESS ONLY
+# TEST HARNESS ONLY - Pushes dummy data through model to test it.
 if __name__ == '__main__':
-    print(timm.list_models())
 
     # Stand-alone arguements parser
     parser = argparse.ArgumentParser()
@@ -139,6 +156,12 @@ if __name__ == '__main__':
     log_model(opt, model)
 
     criterion = nn.BCEWithLogitsLoss()
+
+    # Trace the model
+    traced = symbolic_trace(model)
+
+    # Print the computation graph
+    print(traced.graph)
 
     # Dummy input
     x = torch.randn(32, 3, 224, 224)
