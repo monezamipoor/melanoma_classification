@@ -53,9 +53,10 @@ model:
   freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
-  combined_loss: False
+  combined_loss: True
   loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
-  second_loss: "dice"
+  second_loss: "triplet"
+  triplet_margin: 0.5
   loss_combination_weight: 1
   bce_loss_weights: [2.0]
   dice_loss_smooth: 0.000001
