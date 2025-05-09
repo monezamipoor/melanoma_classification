@@ -86,6 +86,7 @@ class MelanomaDataset(Dataset):
         self.opt = opt
         self.mode = mode
         self.root = root
+        self.use_metadata    = bool(opt['model'].get('use_metadata', False))
         
         # Selecting a subset of data. For quick debugging purposes.
         if self.opt['dataset']['subset'] < 1.0:
@@ -116,8 +117,13 @@ class MelanomaDataset(Dataset):
             return (image1, image2), label
         else:
             image = self.apply_transforms(image, label)
-            meta  = self.metadata[item]
-            return (image, meta), label
+            if self.use_metadata:
+            # metadata was built & attached in the dataloader
+                meta = self.metadata[item]
+                return (image, meta), label
+            else:
+                return image, label
+            
 
 
     def apply_transforms(self, image, label):
@@ -388,28 +394,31 @@ def melanoma_train_dataloaders(opt):
         # Simple split by tfrecord: groups 0-9 for training, 10-11 for validation
         train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
         val_df = dataset[dataset['tfrecord'].isin([10, 11])]
+        if opt['model']['use_metadata']:
+            # 3) Build metadata tensors
+            sex_map  = {'male':0, 'female':1}
+            site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
 
-        # 3) Build metadata tensors
-        sex_map  = {'male':0, 'female':1}
-        site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+            train_meta = [
+                torch.tensor([
+                    sex_map[row.sex],
+                    float(row.age_approx),
+                    float(site_map[row.anatom_site_general_challenge])
+                ], dtype=torch.float32)
+                for _, row in train_df.iterrows()
+            ]
 
-        train_meta = [
-            torch.tensor([
-                sex_map[row.sex],
-                float(row.age_approx),
-                float(site_map[row.anatom_site_general_challenge])
-            ], dtype=torch.float32)
-            for _, row in train_df.iterrows()
-        ]
-
-        val_meta = [
-            torch.tensor([
-                sex_map[row.sex],
-                float(row.age_approx),
-                float(site_map[row.anatom_site_general_challenge])
-            ], dtype=torch.float32)
-            for _, row in val_df.iterrows()
-        ]
+            val_meta = [
+                torch.tensor([
+                    sex_map[row.sex],
+                    float(row.age_approx),
+                    float(site_map[row.anatom_site_general_challenge])
+                ], dtype=torch.float32)
+                for _, row in val_df.iterrows()
+            ]
+        else:
+            train_meta = [None] * len(train_df)
+            val_meta   = [None] * len(val_df)
 
         train_files = (train_df['image_name'] + '.jpg').tolist()
         train_classes = train_df['target'].tolist()
@@ -466,18 +475,20 @@ def melanoma_test_dataloaders(opt):
         dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
         dataset = dataset[dataset['sex'].str.strip()!='']
         dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
-
-    # 3) Build metadata tensors
-    sex_map  = {'male':0, 'female':1}
-    site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
-    meta_test = [
-        torch.tensor([
-            sex_map[row.sex],
-            float(row.age_approx),
-            float(site_map[row.anatom_site_general_challenge])
-        ], dtype=torch.float32)
-        for _, row in dataset.iterrows()
-    ]
+    if opt['model']['use_metadata']:
+        # 3) Build metadata tensors
+        sex_map  = {'male':0, 'female':1}
+        site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+        meta_test = [
+            torch.tensor([
+                sex_map[row.sex],
+                float(row.age_approx),
+                float(site_map[row.anatom_site_general_challenge])
+            ], dtype=torch.float32)
+            for _, row in dataset.iterrows()
+        ]
+    else:
+        meta_test = [None] * len(dataset)
 
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
 
