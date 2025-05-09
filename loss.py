@@ -126,19 +126,21 @@ def _make_loss(name, opt, loader=None):
     """
     name = name.lower()
     if name == 'combined':
+        print("Using combined Loss:")
         return CombinedLoss(opt)
 
     if name == 'bce':
         weights = opt['model'].get('bce_loss_weights', [1.0])
-        print("Using BCE Loss with weights:", weights)
+        print(f"Using BCE Loss with weights: {weights}")
         return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(weights))
 
     if name == 'dice':
-        print("Using Dice Loss")
+        print("Using Dice Loss (smooth={})".format(opt['model'].get('dice_loss_smooth')))
         return DiceLoss(opt)
 
     if name == 'focal':
-        print("Using Focal Loss")
+        fl_cfg = opt['model']['focal_loss']
+        print(f"Using Focal Loss (α={fl_cfg['alpha']}, γ={fl_cfg['gamma']}, reduction={fl_cfg['reduction']})")
         return FocalLoss(opt)
 
     if name == 'svm_hinge':
@@ -146,11 +148,10 @@ def _make_loss(name, opt, loader=None):
         return SVMHingeLoss()
 
     if name == 'contrastive':
-        print("Using Contrastive Loss")
-        return SupConLoss(
-            temperature=opt['model'].get('contrastive_temperature', 0.07),
-            margin_threshold=opt['model'].get('contrastive_margin', 0.5)
-        )
+        temp   = opt['model'].get('contrastive_temperature', 0.07)
+        margin = opt['model'].get('contrastive_margin',    0.5)
+        print(f"Using Supervised Contrastive Loss (temp={temp}, margin={margin})")
+        return SupConLoss(temperature=temp, margin_threshold=margin)
 
     if name == 'bce_auto' and loader is not None:
         print("Using bce_auto Loss")
