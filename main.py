@@ -91,6 +91,19 @@ class MelanomaTrainer:
 
         else:
             self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
+            # ——— DEBUG: peek at metadata ———
+            batch = next(iter(self.train_loader))
+            images, labels = batch
+
+            # since __getitem__ now returns ( (img_tensor, meta_tensor), label ):
+            if isinstance(images, (list, tuple)):
+                img_batch, meta_batch = images
+                print(f"Loaded a batch of {len(meta_batch)} metadata tensors, each of size {meta_batch[0].shape}")
+                # print the metadata for the very first image in the batch:
+                print("First image metadata  :", meta_batch[0].tolist())
+            else:
+                print("No metadata attached to images.")
+            # ——————————————————————————
             self.is_kfold = False
 
         # Instantiate a hybrid model or standard model as appropriate.
@@ -418,6 +431,8 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
 
     with torch.no_grad():
         for images, labels in loop:
+            if isinstance(images, (list,tuple)):
+                images = images[0]
             images, labels = images.to(device), labels.to(device)
             outputs = melanomamodel.model(images)
             loss = melanomamodel.criterion(outputs, labels.float())

@@ -116,7 +116,8 @@ class MelanomaDataset(Dataset):
             return (image1, image2), label
         else:
             image = self.apply_transforms(image, label)
-            return image, label
+            meta  = self.metadata[item]
+            return (image, meta), label
 
 
     def apply_transforms(self, image, label):
@@ -285,6 +286,11 @@ def down_sampling(files, classes, downsampling_rate=1.0):
 
 def melanoma_train_dataloaders(opt):
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    # 1) Drop rows with missing metadata
+    dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+    dataset = dataset[dataset['sex'].str.strip() != '']
+    dataset = dataset[dataset['anatom_site_general_challenge'].str.strip() != '']
+    # dataset = dataset[dataset['age_approx'].str.strip()!='']
     valid_groups = [0,1,2,3,4,5,6,7,8,9,10,11]
     dataset= dataset[dataset['tfrecord'].isin(valid_groups)].reset_index(drop=True)
     files = dataset['image_name'] + '.jpg'
@@ -372,7 +378,29 @@ def melanoma_train_dataloaders(opt):
         # Simple split by tfrecord: groups 0-9 for training, 10-11 for validation
         train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
         val_df = dataset[dataset['tfrecord'].isin([10, 11])]
-        
+
+        # 3) Build metadata tensors
+        sex_map  = {'male':0, 'female':1}
+        site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+
+        train_meta = [
+            torch.tensor([
+                sex_map[row.sex],
+                float(row.age_approx),
+                float(site_map[row.anatom_site_general_challenge])
+            ], dtype=torch.float32)
+            for _, row in train_df.iterrows()
+        ]
+
+        val_meta = [
+            torch.tensor([
+                sex_map[row.sex],
+                float(row.age_approx),
+                float(site_map[row.anatom_site_general_challenge])
+            ], dtype=torch.float32)
+            for _, row in val_df.iterrows()
+        ]
+
         train_files = (train_df['image_name'] + '.jpg').tolist()
         train_classes = train_df['target'].tolist()
         
@@ -390,8 +418,10 @@ def melanoma_train_dataloaders(opt):
             train_files, train_classes = down_sampling(train_files, train_classes, downsampling_rate)
         print(f"After downsampling: {len(train_files)}")
 
-        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)        
+        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
+        train_ds.metadata = train_meta        
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
+        val_ds.metadata   = val_meta
 
         if opt['dataset'].get('use_stratified_sampler', False):
             sampler = stratified_sampler(train_dataset.classes)
