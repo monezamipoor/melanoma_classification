@@ -124,9 +124,20 @@ class MelanomaTrainer:
         self.backbone_frozen = self.freeze_backbone_epochs > 0
 
         # Contrastive learning freezing logic
-        if self.backbone_frozen and not (self.opt['model'].get('loss_function') == 'contrastive'):
-            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs...")
+        # figure out if we actually need backbone grads
+        lf       = opt['model'].get('loss_function','').lower()
+        second   = opt['model'].get('second_loss','').lower()
+        combined = opt['model'].get('combined_loss', False)
+        use_feature_loss = (
+            lf in ['triplet','contrastive']
+            or (combined and second in ['triplet','contrastive'])
+        )
+        # Only freeze backbone for pure classification (no feature-based loss)
+        if self.backbone_frozen and not use_feature_loss:
+            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs (classification-only)...")
             self.freeze_backbone(True)
+        else:
+            print("🔓 Backbone remains unfrozen for feature-based loss training")
 
         self.logwandb = wandb_login(opt)
         print("Wandb: ", self.logwandb)
