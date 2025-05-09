@@ -124,20 +124,9 @@ class MelanomaTrainer:
         self.backbone_frozen = self.freeze_backbone_epochs > 0
 
         # Contrastive learning freezing logic
-        # figure out if we actually need backbone grads
-        lf       = opt['model'].get('loss_function','').lower()
-        second   = opt['model'].get('second_loss','').lower()
-        combined = opt['model'].get('combined_loss', False)
-        use_feature_loss = (
-            lf in ['triplet','contrastive']
-            or (combined and second in ['triplet','contrastive'])
-        )
-        # Only freeze backbone for pure classification (no feature-based loss)
-        if self.backbone_frozen and not use_feature_loss:
-            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs (classification-only)...")
+        if self.backbone_frozen and not (self.opt['model'].get('loss_function') == 'contrastive'):
+            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs...")
             self.freeze_backbone(True)
-        else:
-            print("🔓 Backbone remains unfrozen for feature-based loss training")
 
         self.logwandb = wandb_login(opt)
         print("Wandb: ", self.logwandb)
@@ -346,7 +335,8 @@ def train_batch(melanomamodel, images, labels, epoch):
 
     if lf == 'contrastive':
         preds = melanomamodel.model(images, return_projection=True)
-    elif lf == 'triplet':
+    elif lf == 'triplet' and not combined:
+        # only triplet → ask for features
         preds = melanomamodel.model(images, return_features=True)
     elif combined and second in ['triplet', 'contrastive']:
         preds = melanomamodel.model(images,
@@ -356,9 +346,24 @@ def train_batch(melanomamodel, images, labels, epoch):
     else:
         preds = melanomamodel.model(images)
 
+    print(">>> LOSS DEBUG • preds type:", type(preds),
+      "   preds.requires_grad:", getattr(preds, "requires_grad", None))
+    # If preds is a tuple, unpack and inspect each:
+    if isinstance(preds, tuple):
+        for i, t in enumerate(preds):
+            print(f"   preds[{i}].shape={t.shape}  requires_grad={t.requires_grad}")
+
+    # 2. Show your criterion itself:
+    print(">>> LOSS DEBUG • criterion:", melanomamodel.criterion)
+
+    # 3. Compute the loss and show its graph flags:
     loss = melanomamodel.criterion(preds, labels.float())
+    print(">>> LOSS DEBUG • loss:", loss, 
+        "  loss.requires_grad:", loss.requires_grad,
+        "  loss.grad_fn:", loss.grad_fn)
+
+    # 4. Finally backward
     loss.backward()
-    melanomamodel.optimizer.step()
 
     return loss
 
