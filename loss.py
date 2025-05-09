@@ -133,6 +133,15 @@ class CombinedLoss(nn.Module):
 
         return loss1 + self.weight * loss2
 
+class HardTripletLoss(nn.Module):
+    def __init__(self, margin: float = 1.0):
+        super().__init__()
+        self.base = nn.TripletMarginLoss(margin=margin)
+
+    def forward(self, embeddings: torch.Tensor, labels: torch.Tensor):
+        a, p, n = batch_hard_triplet_embeddings(embeddings, labels)
+        return self.base(a, p, n)
+    
 # A helper to create the loss, it is useful for adding combined losses alongside single losses. 
 def _make_loss(name, opt, loader=None):
     """
@@ -166,9 +175,7 @@ def _make_loss(name, opt, loader=None):
     if name == 'triplet':
         margin = opt['model'].get('triplet_margin', 1.0)
         print(f"Using Triplet Margin Loss (margin={margin})")
-        # Use hard-mined triplets
-        base = nn.TripletMarginLoss(margin=margin)
-        return lambda feats, labels: base(*batch_hard_triplet_embeddings(feats, labels))
+        return HardTripletLoss(margin)
 
     if name == 'bce_auto' and loader is not None:
         print("Using bce_auto Loss")
