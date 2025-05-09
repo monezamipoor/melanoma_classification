@@ -121,12 +121,25 @@ class MelanomaTrainer:
         self.best_metrics = self.reset_metrics()
 
         self.freeze_backbone_epochs = opt['training'].get('freeze_backbone_epochs', 0)
-        self.backbone_frozen = self.freeze_backbone_epochs > 0
+        self.backbone_frozen = opt['training'].get('freeze_backbone', True)
 
+        use_feature_loss = (
+        (self.opt['model'].get('loss_function','').lower() == 'contrastive')
+        or
+        (self.opt['model'].get('loss_function','').lower() == 'triplet'
+        and not self.opt['model'].get('combined_loss', False))
+        )
         # Contrastive learning freezing logic
-        if self.backbone_frozen and not (self.opt['model'].get('loss_function') == 'contrastive'):
-            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs...")
+        if self.backbone_frozen and not use_feature_loss:
+            print(f"🔒 Freezing backbone for {self.freeze_backbone_epochs} epochs (classification-only).")
             self.freeze_backbone(True)
+        elif self.backbone_frozen and use_feature_loss:
+            # We _need_ gradients for triplet/contrastive!
+            print("🔓 Unfreezing backbone for feature-based loss training.")
+            self.freeze_backbone(False)
+        else:
+            # never requested to freeze at all
+            print("🔓 Backbone will not be frozen.")
 
         self.logwandb = wandb_login(opt)
         print("Wandb: ", self.logwandb)
@@ -323,6 +336,8 @@ def train(melanomamodel):
 # Resuable code block for training a batch.
 def train_batch(melanomamodel, images, labels, epoch):
     lf = melanomamodel.opt['model'].get('loss_function','bce').lower()
+    combined = melanomamodel.opt['model'].get('combined_loss', False)
+    second   = melanomamodel.opt['model'].get('second_loss', '').lower()
     if lf == 'contrastive' and epoch < melanomamodel.opt['training']['contrastive_epochs']:
         return melanomamodel.cengine.train_batch(melanomamodel, images, labels, epoch)
 
@@ -336,6 +351,13 @@ def train_batch(melanomamodel, images, labels, epoch):
 
     if lf == 'contrastive':
         preds = melanomamodel.model(images, return_projection=True)
+    elif lf == 'triplet':
+        preds = melanomamodel.model(images, return_features=True)
+    elif combined and second in ['triplet', 'contrastive']:
+        preds = melanomamodel.model(images,
+                                    return_features=True,
+                                    return_logits=True)
+    # 4) All other cases (e.g. BCE or BCE+Dice): just logits
     else:
         preds = melanomamodel.model(images)
 
@@ -519,11 +541,22 @@ def main():
             print("Training complete. No Saved Model. Exiting.")
             return          # Nothing to test
 
-    # 🔄 Ensure contrastive mode is turned off during testing
-    if opt['model']['loss_function'] == 'contrastive':
-        print("🧪 Switching loss_function from 'contrastive' to 'bce' for test phase.")
+    # 🔄 Ensure feature-based modes are turned off during testing
+    if (
+        opt['model']['loss_function'] in ('contrastive', 'triplet')
+        or opt['model'].get('combined_loss', False)
+    ):
+        print(
+            "🧪 Disabling feature-based loss for test phase; "
+            f"running pure 'bce' instead of "
+            f"'{opt['model'].get('loss_function', '')}'"
+            + (", combined" if opt['model'].get('combined_loss') else "")
+        )
         opt['model']['loss_function'] = 'bce'
-        opt['model']['mode'] = 'regular'  # Optional: depends on how your dataloader uses this
+        # drop any secondary triplet/focal/etc.
+        opt['model']['combined_loss'] = False
+        opt['model']['second_loss'] = None
+        opt['model']['mode'] = 'regular'
 
     # Test Loop begins
     melanomatests = []
