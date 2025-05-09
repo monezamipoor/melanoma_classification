@@ -50,7 +50,7 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
-  freeze_backbone: true
+  freeze_backbone: false
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   combined_loss: False
