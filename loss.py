@@ -189,22 +189,17 @@ def _make_loss(name, opt, loader=None):
     raise ValueError(f"Unknown loss function: {name}")
 
 def batch_hard_triplet_embeddings(embeddings: torch.Tensor, labels: torch.Tensor):
-    # Compute pairwise distance matrix
     dist = torch.cdist(embeddings, embeddings, p=2)  # (N, N)
-    mask_pos = labels.unsqueeze(1) == labels.unsqueeze(0)  # same class
+    mask_pos = labels.unsqueeze(1) == labels.unsqueeze(0)
     mask_neg = labels.unsqueeze(1) != labels.unsqueeze(0)
-    # Fill diagonals for pos (to ignore self-positives)
     diag = torch.eye(labels.size(0), device=labels.device, dtype=torch.bool)
     mask_pos = mask_pos & ~diag
-    # Hardest positive: maximum dist among positives
     pos_dist = dist.clone()
     pos_dist[~mask_pos] = float('-inf')
     hardest_pos = torch.argmax(pos_dist, dim=1)
-    # Hardest negative: minimum dist among negatives
     neg_dist = dist.clone()
     neg_dist[~mask_neg] = float('inf')
     hardest_neg = torch.argmin(neg_dist, dim=1)
-    # Gather embeddings
     anchor = embeddings
     positive = embeddings[hardest_pos]
     negative = embeddings[hardest_neg]
