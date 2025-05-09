@@ -55,8 +55,16 @@ class MelanomaTest:
 
         # Instantiate the dataloaders for test
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
-        self.is_kfold = False
-
+        #______________________________________________________________
+        batch = next(iter(self.val_loader))
+        images, labels = batch
+        if isinstance(images, (list, tuple)):
+            _, meta_batch = images
+            print(f"[Test] Meta batch size: {len(meta_batch)}, tensor shape: {meta_batch[0].shape}")
+            print("First test metadata  :", meta_batch[0].tolist())
+            self.is_kfold = False
+        #______________________________________________________________
+        batch = next(iter(self.val_loader))
         # Instantiate a hybrid model or standard model as appropriate.
         if opt['model']['hybrid'].get('enabled', False):
             self.model = test_hybrid_model(opt, testmodel).to(self.device)
@@ -97,15 +105,20 @@ class MelanomaTrainer:
 
             # since __getitem__ now returns ( (img_tensor, meta_tensor), label ):
             if isinstance(images, (list, tuple)):
-                img_batch, meta_batch = images
+                _, meta_batch = images
                 print(f"Loaded a batch of {len(meta_batch)} metadata tensors, each of size {meta_batch[0].shape}")
                 # print the metadata for the very first image in the batch:
                 print("First image metadata  :", meta_batch[0].tolist())
             else:
                 print("No metadata attached to images.")
             # ——————————————————————————
-            self.is_kfold = False
-
+            batch = next(iter(self.val_loader))
+            images, labels = batch
+            if isinstance(images, (list, tuple)):
+                _, meta_batch = images
+                print(f"[Val] Meta batch size: {len(meta_batch)}, tensor shape: {meta_batch[0].shape}")
+                print("First valid metadata  :", meta_batch[0].tolist())
+            # ——————————————————————————
         # Instantiate a hybrid model or standard model as appropriate.
         if opt['model']['hybrid'].get('enabled', False):
             print("Using Hybrid Model")

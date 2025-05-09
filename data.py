@@ -507,7 +507,11 @@ def melanoma_test_dataloaders(opt):
     start_time = time.time()
     total_images = 0
 
+
     for images, _ in test_loader:
+        # unpack metadata-augmented batches just like in train/val
+        if isinstance(images, (list, tuple)):
+            images = images[0]
         total_images += images.size(0)
 
     duration = time.time() - start_time
