@@ -1,3 +1,4 @@
+enable_wandb: false
 # Dataset Arguments
 dataset:
   image_size: [224, 224] # Width, Height of input images
