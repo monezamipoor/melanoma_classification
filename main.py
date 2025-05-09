@@ -320,6 +320,8 @@ def train(melanomamodel):
 # Resuable code block for training a batch.
 def train_batch(melanomamodel, images, labels, epoch):
     lf = melanomamodel.opt['model'].get('loss_function','bce').lower()
+    combined = melanomamodel.opt['model'].get('combined_loss', False)
+    second   = melanomamodel.opt['model'].get('second_loss', '').lower()
     if lf == 'contrastive' and epoch < melanomamodel.opt['training']['contrastive_epochs']:
         return melanomamodel.cengine.train_batch(melanomamodel, images, labels, epoch)
 
@@ -335,14 +337,13 @@ def train_batch(melanomamodel, images, labels, epoch):
         preds = melanomamodel.model(images, return_projection=True)
     elif lf == 'triplet':
         preds = melanomamodel.model(images, return_features=True)
+    elif combined and second in ['triplet', 'contrastive']:
+        preds = melanomamodel.model(images,
+                                    return_features=True,
+                                    return_logits=True)
+    # 4) All other cases (e.g. BCE or BCE+Dice): just logits
     else:
-        combined = melanomamodel.opt['model'].get('combined_loss', False)
-        second = melanomamodel.opt['model'].get('second_loss', '').lower()
-        if combined and second in ['triplet', 'contrastive']:
-            # get both features and logits
-            preds = melanomamodel.model(images, return_features=True, return_logits=True)
-        else:
-            preds = melanomamodel.model(images)
+        preds = melanomamodel.model(images)
 
     loss = melanomamodel.criterion(preds, labels.float())
     loss.backward()
