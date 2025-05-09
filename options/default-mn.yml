@@ -50,7 +50,7 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
-  freeze_backbone: false
+  freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   combined_loss: False
@@ -83,7 +83,7 @@ training:
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
-  freeze_backbone_epochs: 0
+  freeze_backbone_epochs: 5
 
 # Testing and Logging Arguments
 testing:
