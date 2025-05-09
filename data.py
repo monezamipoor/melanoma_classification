@@ -290,65 +290,78 @@ def melanoma_train_dataloaders(opt):
     files = dataset['image_name'] + '.jpg'
     classes = dataset['target'].values
 
+    CUSTOM_FOLDS = [
+        {'train': [0, 1, 2],  'val': [3]},
+        {'train': [4, 5, 6],  'val': [7]},
+        {'train': [8, 9, 10], 'val': [11]},
+    ]
+    
     if opt['dataset'].get('use_groupkfold', False):
-        test_dataset = dataset[dataset['tfrecord'].isin([12, 13, 14])]
-        train_dataset = dataset[dataset['tfrecord'].isin([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11])]
-        oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
-        all_train_files = train_dataset['image_name'].values + '.jpg'
-        all_train_classes = train_dataset['target'].values
-        all_groups = train_dataset['tfrecord'].values
-        n_splits = opt['dataset'].get('n_splits', 3)
-        group_kfold = GroupKFold(n_splits=n_splits)
         fold_loaders = []
-        
-        for fold, (train_idx, val_idx) in enumerate(group_kfold.split(all_train_files, all_train_classes, groups=all_groups)):
-            train_files_fold = all_train_files[train_idx]
-            val_files_fold = all_train_files[val_idx]
-            train_classes_fold = all_train_classes[train_idx]
-            val_classes_fold = all_train_classes[val_idx]
-            downsampling_rate = opt['dataset'].get('downsampling_rate', 1.0)
-            if downsampling_rate < 1.0:
-                print(f"Applying downsampling to the training set for fold {fold} with rate {downsampling_rate}")
-                train_files_fold, train_classes_fold = down_sampling(train_files_fold, train_classes_fold, downsampling_rate)
+        for fold_cfg in CUSTOM_FOLDS:
+            tr_groups, val_groups = fold_cfg['train'], fold_cfg['val']
+    
+            train_mask = dataset['tfrecord'].isin(tr_groups)
+            val_mask   = dataset['tfrecord'].isin(val_groups)
+    
+            train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').values
+            train_classes =  dataset.loc[train_mask, 'target'].values
+    
+            val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').values
+            val_classes =  dataset.loc[val_mask, 'target'].values
+    
+            # ─────── oversampling / down‑sampling exactly as before ───────
+            if opt['dataset'].get('downsampling_rate', 1.0) < 1.0:
+                train_files, train_classes = down_sampling(
+                    train_files, train_classes,
+                    opt['dataset']['downsampling_rate']
+                )
             if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:
-                oversampling_rate = opt['dataset'].get('oversampling_rate', 1.0)
-                print("Applying upsampling to the training set for fold", fold, "with rate", oversampling_rate)
-                train_files_fold, train_classes_fold = up_sampling(train_files_fold, train_classes_fold, oversampling_rate)
-
-            train_dataset_fold = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'],
-                                                  train_files_fold, train_classes_fold)
-            val_dataset_fold = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'],
-                                                val_files_fold, val_classes_fold)
-
+                train_files, train_classes = up_sampling(
+                    train_files, train_classes,
+                    opt['dataset']['oversampling_rate']
+                )
+    
+            # ─────── build MelanomaDataset objects ───────
+            train_ds = MelanomaDataset(opt, 'train',
+                                       opt['dataset']['dataset_train_path'],
+                                       train_files, train_classes)
+            val_ds   = MelanomaDataset(opt, 'val',
+                                       opt['dataset']['dataset_val_path'],
+                                       val_files, val_classes)
+    
+            # ─────── DataLoaders (with optional stratified sampler) ───────
             if opt['dataset'].get('use_stratified_sampler', False):
-                sampler = stratified_sampler(train_dataset_fold.classes)
-                train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'], sampler=sampler, num_workers=2)
-                
+                sampler = stratified_sampler(train_ds.classes)
+                train_loader = DataLoader(train_ds,
+                                          batch_size=opt['dataset']['batch_size'],
+                                          sampler=sampler, num_workers=2)
             else:
-                train_loader_fold = DataLoader(train_dataset_fold, batch_size=opt['dataset']['batch_size'],
-                                               shuffle=True, num_workers=2)
-
-            val_loader_fold = DataLoader(val_dataset_fold, batch_size=opt['dataset']['batch_size'],
-                                         shuffle=False, num_workers=2)
-            val_dataset_fold_balanced = balanced_val(val_dataset_fold)
-            val_loader_fold_balanced = DataLoader(
-                val_dataset_fold_balanced, batch_size=opt['dataset']['batch_size'],
-                shuffle=False, num_workers=2)
-            
+                train_loader = DataLoader(train_ds,
+                                          batch_size=opt['dataset']['batch_size'],
+                                          shuffle=True, num_workers=2)
+    
+            val_loader = DataLoader(val_ds,
+                                    batch_size=opt['dataset']['batch_size'],
+                                    shuffle=False, num_workers=2)
+    
+            # balanced validation set (same helper you already had)
+            val_bal_ds = balanced_val(val_ds)
+            val_loader_bal = DataLoader(val_bal_ds,
+                                        batch_size=opt['dataset']['batch_size'],
+                                        shuffle=False, num_workers=2)
+    
             fold_loaders.append({
-                'fold': fold,
-                'train_loader': train_loader_fold,
-                'val_loader': val_loader_fold,
-                'val_loader_balanced': val_loader_fold_balanced
+                'fold': tr_groups,                 # (optional) keeps track
+                'train_loader': train_loader,
+                'val_loader':   val_loader,
+                'val_loader_balanced': val_loader_bal,
             })
-
-            print("Fold ", str(fold), " Train Balance:")
-            utils.check_dataset_balance(train_dataset_fold)
-            print("Fold ", str(fold), " Val Balance:")
-            utils.check_dataset_balance(val_dataset_fold)
-            print("Fold ", str(fold), " Balanced_Val Balance:")
-            utils.check_dataset_balance(val_dataset_fold_balanced)
-
+    
+            print(f"Fold {tr_groups}  Train balance:");  utils.check_dataset_balance(train_ds)
+            print(f"Fold {tr_groups}  Val balance:");    utils.check_dataset_balance(val_ds)
+            print(f"Fold {tr_groups}  Bal‑Val balance:");utils.check_dataset_balance(val_bal_ds)
+    
         return fold_loaders
 # ------------------------------------ Simple split by tfrecord ------------------------------------
     else:
