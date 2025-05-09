@@ -177,7 +177,8 @@ class MelanomaTrainer:
                     p.requires_grad = True
 
         print(f"Backbone layers frozen?= {freeze}")
-        
+
+    #TODO Work out why this exists when most is called on class instatiation? Only used in KFOLD code?
     def setup_training(self, train_loader):
         """Common initializer for criterion, optimizer, scheduler, scaler."""
         lf = self.opt['model'].get('loss_function', 'bce').lower()
@@ -218,7 +219,9 @@ def train(melanomamodel):
             val_loader = fold_data['val_loader']
             val_loader_balanced = fold_data['val_loader_balanced']
 
-            melanomamodel.setup_training(melanomamodel.fold_loaders)
+            # TODO CHECK WITH SHAYAN - Is this designed to reset any optimizer/scheduler values?
+            melanomamodel.setup_training(train_loader)
+
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
             modeltokeep = None
 
@@ -237,9 +240,9 @@ def train(melanomamodel):
 
                 # Validatation loop for the fold epoch
                 avg_loss = total_loss / len(train_loader)
-                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch, tag='natural')
                 # Calculates validation metrics for both natural and balanced test sets.
-                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
+                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch, tag='balanced')
 
                 # Update the optimiser if a scheduler is configured.
                 if melanomamodel.scheduler:

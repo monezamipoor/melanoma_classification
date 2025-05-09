@@ -148,7 +148,10 @@ def _make_loss(name, opt, loader=None):
         print(f"  Num pos {num_pos}, neg {num_neg}, ratio {num_neg/num_pos:.3f}")
         return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
-    raise ValueError(f"Unknown loss function: {name}")
+    # If we got here just default to BCE
+    bce_weights = opt['model'].get('bce_loss_weights', [1.0])
+    print("Defaulting using BCE Loss with weights:", bce_weights)
+    return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(bce_weights))
 
 
 class CombinedLoss(nn.Module):
