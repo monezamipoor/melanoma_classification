@@ -49,6 +49,8 @@ model:
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
+  second_loss: "dice"
+  loss_combination_weight: 1
   bce_loss_weights: [5.0]
   dice_loss_smooth: 0.000001
   focal_loss:

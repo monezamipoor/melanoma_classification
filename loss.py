@@ -119,49 +119,71 @@ class SupConLoss(nn.Module):
 
         return -mean_log_prob_pos.mean()
 
-def melanoma_loss(opt, loader=None):
+# A helper to create the loss, it is useful for adding combined losses alongside single losses. 
+def _make_loss(name, opt, loader=None):
+    """
+    Returns the desired loss module by name, including 'combined'.
+    """
+    name = name.lower()
+    if name == 'combined':
+        return CombinedLoss(opt)
 
-    loss_function = opt['model'].get('loss_function', 'bce')
+    if name == 'bce':
+        weights = opt['model'].get('bce_loss_weights', [1.0])
+        print("Using BCE Loss with weights:", weights)
+        return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(weights))
 
-    if loss_function == 'focal':
-        print("Using Focal Loss")
-        return FocalLoss(opt)
-    elif loss_function == 'dice':
+    if name == 'dice':
         print("Using Dice Loss")
         return DiceLoss(opt)
-    elif loss_function == 'bce_auto' and loader is not None:
-        # Calculates the "perfect" weighted loss for BCE based on the loader class label balance
-        all_labels = []
-        for inputs, labels in loader:
-            # Move labels to CPU if necessary
-            labels = labels.cpu()
-            all_labels.append(labels)
 
-        # Concatenate all labels into a single tensor
-        all_labels = torch.cat(all_labels)
+    if name == 'focal':
+        print("Using Focal Loss")
+        return FocalLoss(opt)
 
-        print('Using Auto-weigted BCE')
-        num_pos = all_labels.sum()
-        num_neg = len(all_labels) - num_pos
-
-        print ("Num Pos, Neg, Ratio:", str(num_pos), ', ', str(num_neg), ',',  str(num_neg / num_pos))
-
-        pos_weight = torch.tensor([num_neg / num_pos])
-        return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
-    elif loss_function == 'svm_hinge':
+    if name == 'svm_hinge':
         print("Using SVM Hinge Loss")
         return SVMHingeLoss()
-    elif loss_function == 'contrastive':
-        temperature=opt['model'].get('contrastive_temperature', 0.07)
-        margin_threshold=opt['model'].get('contrastive_margin', 0.5)
-        loss = SupConLoss(
-            temperature=temperature,
-            margin_threshold=margin_threshold
-        )
-        print(f"Using Supervised Contrastive Loss with temp={temperature}, margin={margin_threshold}")
-        return loss
-    # If we got here then just use BCE
 
-    bce_weights = opt['model'].get('bce_loss_weights', [1.0])
-    print("Using BCE Loss with weights:", bce_weights)
-    return nn.BCEWithLogitsLoss(pos_weight=torch.tensor(bce_weights))
+    if name == 'contrastive':
+        print("Using Contrastive Loss")
+        return SupConLoss(
+            temperature=opt['model'].get('contrastive_temperature', 0.07),
+            margin_threshold=opt['model'].get('contrastive_margin', 0.5)
+        )
+
+    if name == 'bce_auto' and loader is not None:
+        print("Using bce_auto Loss")
+        all_labels = []
+        for inputs, labels in loader:
+            all_labels.append(labels.cpu())
+        all_labels = torch.cat(all_labels)
+
+        num_pos = all_labels.sum()
+        num_neg = len(all_labels) - num_pos
+        pos_weight = torch.tensor([num_neg / num_pos])
+
+        print("Using Auto-weighted BCE")
+        print(f"  Num pos {num_pos}, neg {num_neg}, ratio {num_neg/num_pos:.3f}")
+        return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
+
+    raise ValueError(f"Unknown loss function: {name}")
+
+
+class CombinedLoss(nn.Module):
+    """L = L1 + weight * L2"""
+    def __init__(self, opt):
+        super().__init__()
+        self.weight = opt['model'].get('loss_combination_weight', 1.0)
+        first  = opt['model']['loss_function']
+        second = opt['model']['second_loss']
+        self.l1 = _make_loss(first, opt)
+        self.l2 = _make_loss(second, opt)
+        print(f"Using CombinedLoss: {first} + {self.weight}*{second}")
+
+    def forward(self, inputs, targets):
+        return self.l1(inputs, targets) + self.weight * self.l2(inputs, targets)
+
+def melanoma_loss(opt, loader=None):
+    loss_name = opt['model'].get('loss_function', 'bce')
+    return _make_loss(loss_name, opt, loader)
