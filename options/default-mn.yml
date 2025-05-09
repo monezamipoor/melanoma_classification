@@ -83,7 +83,7 @@ training:
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
-  freeze_backbone_epochs: 5
+  freeze_backbone_epochs: 0
 
 # Testing and Logging Arguments
 testing:
