@@ -290,15 +290,18 @@ def melanoma_train_dataloaders(opt):
     files = dataset['image_name'] + '.jpg'
     classes = dataset['target'].values
 
+    # Note this is a 4-fold config to maximise the use of available data in a leak free fashion.
+    # We use soft voting which means the number of folds does not have to be an odd number.
     CUSTOM_FOLDS = [
-        {'train': [0, 1, 2],  'val': [3]},
-        {'train': [4, 5, 6],  'val': [7]},
-        {'train': [8, 9, 10], 'val': [11]},
+        {'train': [0, 1, 2, 3, 4, 5, 6, 7, 8],  'val': [9, 10, 11]},
+        {'train': [0, 1, 2, 3, 4, 5, 9, 10, 11],  'val': [6, 7, 8]},
+        {'train': [0, 1, 2, 6, 7, 8, 9, 10, 11],  'val': [3, 4, 5]},
+        {'train': [3, 4, 5, 6, 7, 8, 9, 10, 11],  'val': [0, 1, 2]},
     ]
     
     if opt['dataset'].get('use_groupkfold', False):
         fold_loaders = []
-        for fold_cfg in CUSTOM_FOLDS:
+        for count, fold_cfg in enumerate(CUSTOM_FOLDS):
             tr_groups, val_groups = fold_cfg['train'], fold_cfg['val']
     
             train_mask = dataset['tfrecord'].isin(tr_groups)
@@ -352,15 +355,16 @@ def melanoma_train_dataloaders(opt):
                                         shuffle=False, num_workers=2)
     
             fold_loaders.append({
-                'fold': tr_groups,                 # (optional) keeps track
+                'fold': count+1,                 # (optional) keeps track
                 'train_loader': train_loader,
                 'val_loader':   val_loader,
                 'val_loader_balanced': val_loader_bal,
             })
-    
-            print(f"Fold {tr_groups}  Train balance:");  utils.check_dataset_balance(train_ds)
-            print(f"Fold {tr_groups}  Val balance:");    utils.check_dataset_balance(val_ds)
-            print(f"Fold {tr_groups}  Bal‑Val balance:");utils.check_dataset_balance(val_bal_ds)
+
+            print(f"Fold #{count+1} | Train-groups: {tr_groups} | Val-groups: {val_groups}")
+            print(f"Fold #{count+1} | Train balance:");  utils.check_dataset_balance(train_ds)
+            print(f"Fold #{count+1} | Natural-Val balance:");    utils.check_dataset_balance(val_ds)
+            print(f"Fold #{count+1} | Balanced‑Val:");utils.check_dataset_balance(val_bal_ds)
     
         return fold_loaders
 # ------------------------------------ Simple split by tfrecord ------------------------------------

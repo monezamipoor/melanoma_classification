@@ -190,7 +190,8 @@ class MelanomaTrainer:
                     p.requires_grad = True
 
         print(f"Backbone layers frozen?= {freeze}")
-        
+
+    #TODO Work out why this exists when most is called on class instatiation? Only used in KFOLD code?
     def setup_training(self, train_loader):
         """Common initializer for criterion, optimizer, scheduler, scaler."""
         lf = self.opt['model'].get('loss_function', 'bce').lower()
@@ -231,7 +232,9 @@ def train(melanomamodel):
             val_loader = fold_data['val_loader']
             val_loader_balanced = fold_data['val_loader_balanced']
 
-            melanomamodel.setup_training(melanomamodel.fold_loaders)
+            # TODO CHECK WITH SHAYAN - Is this designed to reset any optimizer/scheduler values?
+            melanomamodel.setup_training(train_loader)
+
             wandb_watch(melanomamodel.model, melanomamodel.criterion, log_freq=10)
             modeltokeep = None
 
@@ -250,9 +253,9 @@ def train(melanomamodel):
 
                 # Validatation loop for the fold epoch
                 avg_loss = total_loss / len(train_loader)
-                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch)
+                val_loss, val_metrics = validate(melanomamodel, val_loader, epoch, tag='natural')
                 # Calculates validation metrics for both natural and balanced test sets.
-                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch)
+                val_loss_bal, val_metrics_bal = validate(melanomamodel, val_loader_balanced, epoch, tag='balanced')
 
                 # Update the optimiser if a scheduler is configured.
                 if melanomamodel.scheduler:
@@ -490,6 +493,7 @@ def argument_parser():
     parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
     parser.add_argument("-s", "--savedmodel", type=str, required=False, help="the model file to test", nargs='+')
     parser.add_argument("-t", "--testcsv", type=str, required=False, help="the csv file to test")
+    parser.add_argument("-wandb", action="store_true", help="Enable Wandb logging")
     args = parser.parse_args()
 
     if not os.path.isabs(args.opt) and not args.opt.startswith('./'):
@@ -522,6 +526,11 @@ def main():
     opt = argument_parser()
     testmodels = opt['dataset']['savedmodel']   # testmodels is a list of saved model paths. Multiple models (e.g. k-fold) will trigger prediction voting in test
 
+    if opt['enable_wandb']:
+        wandb.init(project="melanoma_project")
+    else:
+        os.environ["WANDB_MODE"] = "disabled"
+    
     # Check to see if we should train first
     if testmodels is None or len(testmodels) == 0:           # Train because we don't have a model to test against
         print("TRAIN MODEL MODE")

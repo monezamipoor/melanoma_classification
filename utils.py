@@ -361,10 +361,15 @@ def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
     #print(f"Kaggle CSV saved to {fileout}")
 
 # Establish the mean of a tensor of logits. Principally for soft-voting.
-# Note that this also works for single model inputs as (x / 1 = x)
+# Input must be [x,y] x = row per model, y = logits to average. E.g. [2,500] would be 2 models with 500 logits each.
+# Note that this also works for single model (x=1) inputs as (y / 1 = y)
 def soft_voting_probs_from_logits(ensemble_logits):
     probs = torch.sigmoid(ensemble_logits)
     avg_probs = probs.mean(dim=0)
+
+    #print(f"[DEBUG] voting input shape: {probs.shape}, mean dim=0 -> divides by: {probs.shape[0]}")
+    #print(f"[DEBUG] voting output shape: {avg_probs.shape}")
+
     return avg_probs
 
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):

@@ -1,3 +1,4 @@
+enable_wandb: false
 # Dataset Arguments
 dataset:
   image_size: [224, 224] # Width, Height of input images
@@ -92,10 +93,10 @@ testing:
   model_save_metrics: ["AUC"]
   model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
   checkpoint_dir: "/content/drive/MyDrive/Colab Notebooks/melanoma_classification/checkpoints"   # creates this as a sub-dir under each run
-  wandb:
-    project_name: "Melanoma" # yourproject
-    entity: "university-of-surrey" # yourorg
-    api_key: "c8d2bff42c019f8debc929403c96250ec6d10d6f" # Replace with your actual key
+  # wandb:
+  #   project_name: "Melanoma" # yourproject
+  #   entity: "university-of-surrey" # yourorg
+  #   api_key: "c8d2bff42c019f8debc929403c96250ec6d10d6f" # Replace with your actual key
   early_stopping:
     patience: 10
     min_delta: 0.001
