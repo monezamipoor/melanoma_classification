@@ -39,22 +39,6 @@ class FocalLoss(nn.Module):
             return loss.sum()
         return loss
 
-
-#     def forward(self, inputs, targets):
-#         preds = torch.sigmoid(inputs)           # Our predictions needs to be 0..1
-#         BCE_loss = nn.functional.binary_cross_entropy_with_logits(inputs, targets, reduction="none")    # Calc base BCE loss
-#         pt = preds * targets + (1 - preds) * (1 - targets)          # Predictions vs target labels
-#         focal_loss = self.alpha * (1 - pt) ** self.gamma * BCE_loss         # Apply gamma and alpha multipliers to predictions vs BCE loss
-
-#         # Apply reduction (mean, sum, or no reduction)
-#         if self.reduction == 'mean':
-#             return focal_loss.mean()
-#         elif self.reduction == 'sum':
-#             return focal_loss.sum()
-#         else:
-#             return focal_loss
-
-
 class DiceLoss(nn.Module):
     def __init__(self, opt):
         super(DiceLoss, self).__init__()
@@ -125,10 +109,6 @@ def _make_loss(name, opt, loader=None):
     Returns the desired loss module by name, including 'combined'.
     """
     name = name.lower()
-    if name == 'combined':
-        print("Using combined Loss:")
-        return CombinedLoss(opt)
-
     if name == 'bce':
         weights = opt['model'].get('bce_loss_weights', [1.0])
         print(f"Using BCE Loss with weights: {weights}")
@@ -186,5 +166,11 @@ class CombinedLoss(nn.Module):
         return self.l1(inputs, targets) + self.weight * self.l2(inputs, targets)
 
 def melanoma_loss(opt, loader=None):
+    if opt['model'].get('combined_loss', False):
+        print("Building CombinedLoss from "
+                f"{opt['model']['loss_function']} + "
+                f"{opt['model']['second_loss']} * "
+                f"{opt['model']['loss_combination_weight']}")
+        return CombinedLoss(opt)
     loss_name = opt['model'].get('loss_function', 'bce')
     return _make_loss(loss_name, opt, loader)

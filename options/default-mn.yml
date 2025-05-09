@@ -6,15 +6,20 @@ dataset:
   downsampling_rate: 0.3 # Keep X% of class 0
   oversampling_rate: 5 # Leave at 1 to disable
   augmentations:
+    apply_augmentation_to_all: false
     #horizontal_flip: 0.2
     vertical_flip: 0.2
-    #random_rotation: 20 # degrees
-    color_jitter: 0.2 # brightness, contrast, saturation
-    image_mix_enabled: False
-    # image_mix_type: column # Use "column" to activate ColumnMixTransform.
-    image_mix_prob: 0.2
-    #random_shear: 20
-    #shift_vertical: 0.2
+    #random_rotation: 10
+    #color_jitter: 0.2
+    #shift_vertical: 0.1
+    #shift_horizontal: 0.1
+    #random_zoom: [0.8, 1.2]
+    elastic_transform: false
+    #random_erasing: 0.2
+    gaussian_noise: 0.2
+    gaussian_noise_prob: 0.3
+    image_mix_enabled: false
+    image_mix_prob: 0.3
 
   #stratified_batching: true  # For maintaining class distribution in batches
   #stratified_batching: true  # For maintaining class distribution in batches
@@ -48,6 +53,7 @@ model:
   freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
+  combined_loss: True
   loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
   second_loss: "dice"
   loss_combination_weight: 1
