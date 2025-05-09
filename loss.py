@@ -104,7 +104,6 @@ class SupConLoss(nn.Module):
         return -mean_log_prob_pos.mean()
 
 class CombinedLoss(nn.Module):
-    """L = L1 + weight * L2"""
     def __init__(self, opt):
         super().__init__()
         self.weight = opt['model'].get('loss_combination_weight', 1.0)
@@ -167,7 +166,9 @@ def _make_loss(name, opt, loader=None):
     if name == 'triplet':
         margin = opt['model'].get('triplet_margin', 1.0)
         print(f"Using Triplet Margin Loss (margin={margin})")
-        return nn.TripletMarginLoss(margin=margin)
+        # Use hard-mined triplets
+        base = nn.TripletMarginLoss(margin=margin)
+        return lambda feats, labels: base(*batch_hard_triplet_embeddings(feats, labels))
 
     if name == 'bce_auto' and loader is not None:
         print("Using bce_auto Loss")
@@ -186,6 +187,29 @@ def _make_loss(name, opt, loader=None):
         return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 
     raise ValueError(f"Unknown loss function: {name}")
+
+def batch_hard_triplet_embeddings(embeddings: torch.Tensor, labels: torch.Tensor):
+    # Compute pairwise distance matrix
+    dist = torch.cdist(embeddings, embeddings, p=2)  # (N, N)
+    mask_pos = labels.unsqueeze(1) == labels.unsqueeze(0)  # same class
+    mask_neg = labels.unsqueeze(1) != labels.unsqueeze(0)
+    # Fill diagonals for pos (to ignore self-positives)
+    diag = torch.eye(labels.size(0), device=labels.device, dtype=torch.bool)
+    mask_pos = mask_pos & ~diag
+    # Hardest positive: maximum dist among positives
+    pos_dist = dist.clone()
+    pos_dist[~mask_pos] = float('-inf')
+    hardest_pos = torch.argmax(pos_dist, dim=1)
+    # Hardest negative: minimum dist among negatives
+    neg_dist = dist.clone()
+    neg_dist[~mask_neg] = float('inf')
+    hardest_neg = torch.argmin(neg_dist, dim=1)
+    # Gather embeddings
+    anchor = embeddings
+    positive = embeddings[hardest_pos]
+    negative = embeddings[hardest_neg]
+    return anchor, positive, negative
+
 
 def melanoma_loss(opt, loader=None):
     if opt['model'].get('combined_loss', False):
