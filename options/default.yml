@@ -3,26 +3,23 @@ dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
   n_splits: 3
-  downsampling_rate: 0.3 # Keep X% of class 0
-  oversampling_rate: 5 # Leave at 1 to disable
+  downsampling_rate: 0.1 # Keep X% of class 0
+  oversampling_rate: 3 # Leave at 1 to disable
   augmentations:
-    #horizontal_flip: 0.5
-    vertical_flip: 0.4
+    apply_augmentation_to_all: false
+    #horizontal_flip: 0.2
+    vertical_flip: 0.2
     #random_rotation: 10
-    color_jitter: 0.2
+    #color_jitter: 0.2
     #shift_vertical: 0.1
     #shift_horizontal: 0.1
-    random_zoom: [0.9, 1.1]
+    #random_zoom: [0.8, 1.2]
     elastic_transform: false
-    random_erasing: 0.2
-    #gaussian_noise: 0.1
+    #random_erasing: 0.2
+    gaussian_noise: 0.2
     gaussian_noise_prob: 0.3
-    image_mix_enabled: true
-    image_mix_type: column
+    image_mix_enabled: false
     image_mix_prob: 0.3
-    save_augmentation: true
-    aug_save_dir: "/content/drive/MyDrive/melanoma/logs/Sample"
-    sample_number: 100
 
   #stratified_batching: true  # For maintaining class distribution in batches
   dataset_train_path: "/content/Melanoma/train"
@@ -42,7 +39,10 @@ model:
   dropout_rate: 0.3
   freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier (freeze backbone must be true)
-  loss_function: "bce_auto" # 'bce', 'focal', 'dice'
+  combined_loss: False
+  loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
+  second_loss: "dice"
+  loss_combination_weight: 1
   bce_loss_weights: [1.0]
   dice_loss_smooth: 0.00005
   focal_loss:
