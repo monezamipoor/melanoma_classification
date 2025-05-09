@@ -70,7 +70,7 @@ model:
   contrastive_temperature: 0.07
   contrastive_margin: 0.5
   contrastive_svm_lambda: 0.1
-  use_metadata: False
+  use_metadata: True
 
 # Training Arguments
 training:
