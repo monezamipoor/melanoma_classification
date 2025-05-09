@@ -296,9 +296,10 @@ def down_sampling(files, classes, downsampling_rate=1.0):
 def melanoma_train_dataloaders(opt):
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
     # 1) Drop rows with missing metadata
-    dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
-    dataset = dataset[dataset['sex'].str.strip() != '']
-    dataset = dataset[dataset['anatom_site_general_challenge'].str.strip() != '']
+    if opt['model']['use_metadata']:
+        dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+        dataset = dataset[dataset['sex'].str.strip() != '']
+        dataset = dataset[dataset['anatom_site_general_challenge'].str.strip() != '']
     # dataset = dataset[dataset['age_approx'].str.strip()!='']
     valid_groups = [0,1,2,3,4,5,6,7,8,9,10,11]
     dataset= dataset[dataset['tfrecord'].isin(valid_groups)].reset_index(drop=True)
@@ -461,9 +462,10 @@ def melanoma_test_dataloaders(opt):
     dataset = pd.read_csv(opt['dataset']['dataset_test_csv'])
 
     # 2) Drop rows with missing metadata
-    dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
-    dataset = dataset[dataset['sex'].str.strip()!='']
-    dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
+    if opt['model']['use_metadata']:
+        dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+        dataset = dataset[dataset['sex'].str.strip()!='']
+        dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
 
     # 3) Build metadata tensors
     sex_map  = {'male':0, 'female':1}
