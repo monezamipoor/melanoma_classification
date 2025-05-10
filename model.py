@@ -74,7 +74,28 @@ class MelanomaModel(nn.Module):
 
             else:
                 raise ValueError("Unsupported backbone structure: no classifier head found.")
+        
+        # ——— metadata branch ———
+        if bool(opt['model'].get('use_metadata', False)):
+            # assuming metadata vector is length 8 (sex, age, 6‐hot site)
+            meta_dim = opt['model'].get('meta_input_dim', 8)
 
+            # build the 2‐layer MLP: meta_dim → 512 → feature_dim
+            self.meta_mlp = nn.Sequential(
+                nn.Linear(meta_dim, 512),
+                nn.BatchNorm1d(512),
+                nn.SiLU(),            # Swish
+                nn.Dropout(0.3),
+                nn.Linear(512, feature_dim),
+                nn.BatchNorm1d(feature_dim),
+                nn.SiLU()
+            )
+
+            # override classifier to accept concatenated [img_feat; meta_feat]
+            self.classifier = nn.Sequential(
+                nn.Dropout(dropout_rate),
+                nn.Linear(feature_dim * 2, opt['model']['output_neurons'])
+            )
 
         if self.use_contrastive_head:
             print("🧩 Adding contrastive projection head.")
@@ -136,12 +157,16 @@ class MelanomaModel(nn.Module):
 
     def forward(self, x, return_features=False, return_projection=False, return_logits=False):
         if isinstance(x, (list, tuple)):
-            x = x[0]
+            img = x[0]
+            if self.use_metadata:
+                meta = x[1]
+        else:
+            img = x
 
         if hasattr(self.backbone, 'forward_features'):
-            features = self.backbone.forward_features(x)
+            features = self.backbone.forward_features(img)
         else:
-            features = self.backbone(x)
+            features = self.backbone(img)
 
         if features.ndim == 4 and features.shape[-1] != features.shape[-2]:
             features = features.permute(0, 3, 1, 2)  # [B, C, H, W]
@@ -155,6 +180,11 @@ class MelanomaModel(nn.Module):
             pass
         else:
             raise ValueError(f"Unexpected feature shape: {features.shape}")
+        
+        if self.use_metadata:
+            # meta is [B × meta_dim]
+            meta_feat = self.meta_mlp(meta)    # ⇒ [B × feature_dim]
+            features = torch.cat([features, meta_feat], dim=1)
             
         if return_features and return_logits:
             logits = self.classifier(features).squeeze(-1)

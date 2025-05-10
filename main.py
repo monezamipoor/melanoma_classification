@@ -340,9 +340,15 @@ def train_batch(melanomamodel, images, labels, epoch):
 
     # Zero our gradients
     melanomamodel.optimizer.zero_grad()
-    if isinstance(images, (list, tuple)):
-        images = images[0]
-    images = images.to(melanomamodel.device)
+    if bool(melanomamodel.opt['model'].get('use_metadata', False)):
+        img, meta = images
+        img  = img.to(melanomamodel.device)
+        meta = meta.to(melanomamodel.device)
+        images = (img, meta) 
+    else:
+        # If images is a tuple/list, drop the second element
+        img = images if not isinstance(images, (list, tuple)) else images[0]
+        images = img.to(melanomamodel.device)
     labels = labels.to(melanomamodel.device)
 
 
@@ -382,9 +388,15 @@ def validate(m, val_loader, epoch=1, tag='notag'):
     with torch.no_grad():
         loop = tqdm(val_loader, desc="[Val]")
         for images, labels in loop:
-            if isinstance(images, (list, tuple)):
-                images = images[0]
-            images, labels = images.to(device), labels.to(device)
+            if bool(m.opt['model'].get('use_metadata', False)):
+                img, meta = images
+                img  = img.to(device)
+                meta = meta.to(device)
+                images = (img, meta) 
+            else:
+                # If images is a tuple/list, drop the second element
+                img = images if not isinstance(images, (list, tuple)) else images[0]
+                images = img.to(device)
             preds = m.model(images)
             probs = torch.sigmoid(preds)
             loss = bce_crit(preds, labels.float())
@@ -417,7 +429,15 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
         for images, labels in loop:
             if isinstance(images, (list,tuple)):
                 images = images[0]
-            images, labels = images.to(device), labels.to(device)
+            if bool(melanomamodel.opt['model'].get('use_metadata', False)):
+                img, meta = images
+                img  = img.to(device)
+                meta = meta.to(device)
+                images = (img, meta) 
+            else:
+                # If images is a tuple/list, drop the second element
+                img = images if not isinstance(images, (list, tuple)) else images[0]
+                images = img.to(device)
             outputs = melanomamodel.model(images)
             loss = melanomamodel.criterion(outputs, labels.float())
             total_loss += loss.item()
