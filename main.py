@@ -52,8 +52,6 @@ class MelanomaTest:
 
         # Instantiate the dataloaders for test
         self.predictmode, self.val_loader = melanoma_test_dataloaders(opt)
-        self.is_kfold = False
-
         # Instantiate a hybrid model or standard model as appropriate.
         if opt['model']['hybrid'].get('enabled', False):
             self.model = test_hybrid_model(opt, testmodel).to(self.device)
@@ -89,7 +87,6 @@ class MelanomaTrainer:
         else:
             self.train_loader, self.val_loader, self.val_loader_balanced = melanoma_train_dataloaders(opt)
             self.is_kfold = False
-
         # Instantiate a hybrid model or standard model as appropriate.
         if opt['model']['hybrid'].get('enabled', False):
             print("Using Hybrid Model")
@@ -340,9 +337,15 @@ def train_batch(melanomamodel, images, labels, epoch):
 
     # Zero our gradients
     melanomamodel.optimizer.zero_grad()
-    if isinstance(images, (list, tuple)):
-        images = images[0]
-    images = images.to(melanomamodel.device)
+    if bool(melanomamodel.opt['model'].get('use_metadata', False)):
+        img, meta = images
+        img  = img.to(melanomamodel.device)
+        meta = meta.to(melanomamodel.device)
+        images = (img, meta) 
+    else:
+        # If images is a tuple/list, drop the second element
+        img = images if not isinstance(images, (list, tuple)) else images[0]
+        images = img.to(melanomamodel.device)
     labels = labels.to(melanomamodel.device)
 
 
@@ -382,9 +385,16 @@ def validate(m, val_loader, epoch=1, tag='notag'):
     with torch.no_grad():
         loop = tqdm(val_loader, desc="[Val]")
         for images, labels in loop:
-            if isinstance(images, (list, tuple)):
-                images = images[0]
-            images, labels = images.to(device), labels.to(device)
+            if bool(m.opt['model'].get('use_metadata', False)):
+                img, meta = images
+                img  = img.to(device)
+                meta = meta.to(device)
+                images = (img, meta) 
+            else:
+                # If images is a tuple/list, drop the second element
+                img = images if not isinstance(images, (list, tuple)) else images[0]
+                images = img.to(device)
+            labels = labels.to(device)
             preds = m.model(images)
             probs = torch.sigmoid(preds)
             loss = bce_crit(preds, labels.float())
@@ -415,7 +425,16 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
 
     with torch.no_grad():
         for images, labels in loop:
-            images, labels = images.to(device), labels.to(device)
+            if bool(melanomamodel.opt['model'].get('use_metadata', False)):
+                img, meta = images           # images is (img_tensor, meta_tensor)
+                img  = img.to(device)
+                meta = meta.to(device)
+                images = (img, meta)
+            else:
+                # images may be a tuple (img,meta) or a single Tensor
+                img = images[0] if isinstance(images, (list,tuple)) else images
+                images = img.to(device)
+            labels = labels.to(device)
             outputs = melanomamodel.model(images)
             loss = melanomamodel.criterion(outputs, labels.float())
             total_loss += loss.item()

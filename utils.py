@@ -8,6 +8,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.f2py.auxfuncs import throw_error
 import math
+import torch.nn.functional as F
 
 EPOCH= 0
 rundir = None
@@ -419,3 +420,24 @@ def denormalize_image(tensor, mean, std):
     for t, m, s in zip(tensor, mean, std):
         t.mul_(s).add_(m)
     return tensor
+
+def build_metadata(df, sex_map, site_map):
+    """
+    Given a DataFrame with columns ['sex','age_approx','anatom_site_general_challenge'],
+    plus precomputed maps sex_map and site_map,
+    returns a list of [sex,age,site_onehot…] FloatTensors.
+    """
+    num_sites = 6
+    metas = []
+    for _, row in df.iterrows():
+        s = sex_map[row.sex]
+        a = float(row.age_approx)
+        idx = site_map[row.anatom_site_general_challenge]
+        onehot = F.one_hot(torch.tensor(idx, dtype=torch.long),
+                            num_classes=num_sites).float()
+        vec = torch.cat([
+            torch.tensor([s, a], dtype=torch.float32),
+            onehot
+        ], dim=0)
+        metas.append(vec)
+    return metas

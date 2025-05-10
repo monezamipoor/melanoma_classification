@@ -2,10 +2,10 @@ enable_wandb: false
 # Dataset Arguments
 dataset:
   image_size: [224, 224] # Width, Height of input images
-  use_groupkfold: false
+  use_groupkfold: False
   n_splits: 3
   downsampling_rate: 0.1 # Keep X% of class 0
-  oversampling_rate: 3 # Leave at 1 to disable
+  oversampling_rate: 5 # Leave at 1 to disable
   augmentations:
     apply_augmentation_to_all: false
     #horizontal_flip: 0.2
@@ -21,6 +21,8 @@ dataset:
     gaussian_noise_prob: 0.3
     image_mix_enabled: false
     image_mix_prob: 0.3
+    aug_save_dir: "/content"
+    sample_number: 20
 
   #stratified_batching: true  # For maintaining class distribution in batches
   #stratified_batching: true  # For maintaining class distribution in batches
@@ -51,11 +53,10 @@ model:
   pretrained: true
   output_neurons: 1 # Number of classes
   dropout_rate: 0.2
-  freeze_backbone: true
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   combined_loss: False
-  loss_function: "triplet" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
+  loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
   second_loss: "triplet"
   triplet_margin: 0.5
   loss_combination_weight: 1
@@ -70,6 +71,8 @@ model:
   contrastive_temperature: 0.07
   contrastive_margin: 0.5
   contrastive_svm_lambda: 0.1
+  use_metadata: False
+  freeze_backbone: false
 
 # Training Arguments
 training:
@@ -79,12 +82,13 @@ training:
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
   contrastive_epochs: 0
-  epochs: 2
+  epochs: 20
   warmup_epochs: 0
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
   gradient_clipping: 1.0
-  freeze_backbone_epochs: 5
+  freeze_backbone: false
+  freeze_backbone_epochs: 2
 
 # Testing and Logging Arguments
 testing:

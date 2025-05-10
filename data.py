@@ -7,7 +7,6 @@ import time
 
 import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
-
 from PIL import Image
 import numpy as np
 import pandas as pd
@@ -18,7 +17,6 @@ try:
     from torchvision.transforms import ElasticTransform
 except ImportError:
     ElasticTransform = None 
-
 
 import utils
 
@@ -86,6 +84,7 @@ class MelanomaDataset(Dataset):
         self.opt = opt
         self.mode = mode
         self.root = root
+        self.use_metadata    = bool(opt['model'].get('use_metadata', False))
         
         # Selecting a subset of data. For quick debugging purposes.
         if self.opt['dataset']['subset'] < 1.0:
@@ -116,7 +115,13 @@ class MelanomaDataset(Dataset):
             return (image1, image2), label
         else:
             image = self.apply_transforms(image, label)
-            return image, label
+            if self.use_metadata:
+            # metadata was built & attached in the dataloader
+                meta = self.metadata[item]
+                return (image, meta), label
+            else:
+                return image, label
+            
 
 
     def apply_transforms(self, image, label):
@@ -254,11 +259,20 @@ def balanced_val(dataset):
 
     balanced_files, balanced_classes = zip(*balanced_samples)
 
-    return MelanomaDataset(
+    new_ds = MelanomaDataset(
         dataset.opt, dataset.mode, dataset.root,
         list(balanced_files), list(balanced_classes),
         transforms_tuple=(dataset.base_transforms, dataset.class1_transforms)
     )
+
+    # ── Propagate metadata from the original ──
+    # For each balanced file, find its index in the original dataset.files
+    new_ds.metadata = [
+        dataset.metadata[ dataset.files.index(fname) ]
+        for fname in balanced_files
+    ]
+
+    return new_ds
 
   
 
@@ -285,6 +299,12 @@ def down_sampling(files, classes, downsampling_rate=1.0):
 
 def melanoma_train_dataloaders(opt):
     dataset = pd.read_csv(opt['dataset']['dataset_train_csv'])
+    # 1) Drop rows with missing metadata
+    if opt['model']['use_metadata']:
+        dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+        dataset = dataset[dataset['sex'].str.strip() != '']
+        dataset = dataset[dataset['anatom_site_general_challenge'].str.strip() != '']
+    # dataset = dataset[dataset['age_approx'].str.strip()!='']
     valid_groups = [0,1,2,3,4,5,6,7,8,9,10,11]
     dataset= dataset[dataset['tfrecord'].isin(valid_groups)].reset_index(drop=True)
     files = dataset['image_name'] + '.jpg'
@@ -300,6 +320,12 @@ def melanoma_train_dataloaders(opt):
     ]
     
     if opt['dataset'].get('use_groupkfold', False):
+        if opt['model']['use_metadata']:
+            sex_map  = {'male': 0, 'female': 1}
+            site_map = {
+                s: i for i, s in
+                enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))
+            }
         fold_loaders = []
         for count, fold_cfg in enumerate(CUSTOM_FOLDS):
             tr_groups, val_groups = fold_cfg['train'], fold_cfg['val']
@@ -307,12 +333,23 @@ def melanoma_train_dataloaders(opt):
             train_mask = dataset['tfrecord'].isin(tr_groups)
             val_mask   = dataset['tfrecord'].isin(val_groups)
     
-            train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').values
+            train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').tolist()
             train_classes =  dataset.loc[train_mask, 'target'].values
     
-            val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').values
+            val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').tolist()
             val_classes =  dataset.loc[val_mask, 'target'].values
-    
+
+            # ── Build metadata for this fold ──
+            if opt['model']['use_metadata']:
+                train_df = dataset.loc[train_mask].reset_index(drop=True)
+                val_df   = dataset.loc[val_mask].reset_index(drop=True)
+
+                train_meta = utils.build_metadata(train_df, sex_map, site_map)
+                val_meta   = utils.build_metadata(val_df,   sex_map, site_map)
+            else:
+                train_meta = [None] * len(train_files)
+                val_meta   = [None] * len(val_files)
+
             # ─────── oversampling / down‑sampling exactly as before ───────
             if opt['dataset'].get('downsampling_rate', 1.0) < 1.0:
                 train_files, train_classes = down_sampling(
@@ -329,9 +366,11 @@ def melanoma_train_dataloaders(opt):
             train_ds = MelanomaDataset(opt, 'train',
                                        opt['dataset']['dataset_train_path'],
                                        train_files, train_classes)
+            train_ds.metadata = train_meta
             val_ds   = MelanomaDataset(opt, 'val',
                                        opt['dataset']['dataset_val_path'],
                                        val_files, val_classes)
+            val_ds.metadata = val_meta
     
             # ─────── DataLoaders (with optional stratified sampler) ───────
             if opt['dataset'].get('use_stratified_sampler', False):
@@ -372,7 +411,19 @@ def melanoma_train_dataloaders(opt):
         # Simple split by tfrecord: groups 0-9 for training, 10-11 for validation
         train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
         val_df = dataset[dataset['tfrecord'].isin([10, 11])]
-        
+
+        if opt['model']['use_metadata']:
+            # dropna as before…
+            sex_map  = {'male':0,'female':1}
+            site_map = {s:i for i,s in 
+                        enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+
+            train_meta = utils.build_metadata(train_df, sex_map, site_map)
+            val_meta   = utils.build_metadata(val_df,   sex_map, site_map)
+        else:
+            train_meta = [None] * len(train_df)
+            val_meta   = [None] * len(val_df)
+
         train_files = (train_df['image_name'] + '.jpg').tolist()
         train_classes = train_df['target'].tolist()
         
@@ -390,8 +441,10 @@ def melanoma_train_dataloaders(opt):
             train_files, train_classes = down_sampling(train_files, train_classes, downsampling_rate)
         print(f"After downsampling: {len(train_files)}")
 
-        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)        
+        train_dataset = MelanomaDataset(opt, 'train', opt['dataset']['dataset_train_path'], train_files, train_classes)
+        train_dataset.metadata = train_meta        
         val_dataset = MelanomaDataset(opt, 'val', opt['dataset']['dataset_val_path'], val_files, val_classes)
+        val_dataset.metadata   = val_meta
 
         if opt['dataset'].get('use_stratified_sampler', False):
             sampler = stratified_sampler(train_dataset.classes)
@@ -418,8 +471,22 @@ def melanoma_train_dataloaders(opt):
 
 
 def melanoma_test_dataloaders(opt):
-
+    # 1) Load Dataset:
     dataset = pd.read_csv(opt['dataset']['dataset_test_csv'])
+
+    # 2) Drop rows with missing metadata
+    if opt['model']['use_metadata']:
+        dataset = dataset.dropna(subset=['sex','age_approx','anatom_site_general_challenge'])
+        dataset = dataset[dataset['sex'].str.strip()!='']
+        dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
+    if opt['model']['use_metadata']:
+        sex_map  = {'male':0,'female':1}
+        site_map = {s:i for i,s in 
+                    enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+
+        meta_test = utils.build_metadata(dataset, sex_map, site_map)
+    else:
+        meta_test = [None] * len(dataset)
 
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
 
@@ -439,6 +506,7 @@ def melanoma_test_dataloaders(opt):
         'val',
         opt['dataset']['dataset_test_path'], files, classes
     )
+    test_dataset.metadata = meta_test
 
     test_loader = DataLoader(
         test_dataset,
@@ -450,7 +518,11 @@ def melanoma_test_dataloaders(opt):
     start_time = time.time()
     total_images = 0
 
+
     for images, _ in test_loader:
+        # unpack metadata-augmented batches just like in train/val
+        if isinstance(images, (list, tuple)):
+            images = images[0]
         total_images += images.size(0)
 
     duration = time.time() - start_time
