@@ -116,7 +116,6 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
             cm = confusion_matrix(target_int.numpy(), preds_binary.numpy())
             results[rundict.get(metric_lower, metric_lower)] = cm
 
-            # TODO break out wandb and local display of CMs. Also save CM as part of logging rather than plot them
             wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
 
     # Log the confusion matrix and ROCAUC for the Test epoch only
