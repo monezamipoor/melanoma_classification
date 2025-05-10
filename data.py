@@ -333,10 +333,10 @@ def melanoma_train_dataloaders(opt):
             train_mask = dataset['tfrecord'].isin(tr_groups)
             val_mask   = dataset['tfrecord'].isin(val_groups)
     
-            train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').values
+            train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').tolist()
             train_classes =  dataset.loc[train_mask, 'target'].values
     
-            val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').values
+            val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').tolist()
             val_classes =  dataset.loc[val_mask, 'target'].values
 
             # ── Build metadata for this fold ──
