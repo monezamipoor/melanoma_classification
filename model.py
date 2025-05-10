@@ -88,7 +88,7 @@ class MelanomaModel(nn.Module):
                 nn.SiLU(),            # Swish
                 nn.Dropout(0.3),
                 nn.Linear(512, feature_dim),
-                nn.BatchNorm1d(feature_dim),
+                nn.LayerNorm(feature_dim),
                 nn.SiLU()
             )
 
