@@ -84,7 +84,7 @@ class MelanomaModel(nn.Module):
             # build the 2‐layer MLP: meta_dim → 512 → feature_dim
             self.meta_mlp = nn.Sequential(
                 nn.Linear(meta_dim, 512),
-                nn.BatchNorm1d(512),
+                nn.LayerNorm(512),
                 nn.SiLU(),            # Swish
                 nn.Dropout(0.3),
                 nn.Linear(512, feature_dim),
