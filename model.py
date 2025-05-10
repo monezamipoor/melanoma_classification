@@ -76,7 +76,8 @@ class MelanomaModel(nn.Module):
                 raise ValueError("Unsupported backbone structure: no classifier head found.")
         
         # ——— metadata branch ———
-        if bool(opt['model'].get('use_metadata', False)):
+        self.use_metadata = bool(opt['model'].get('use_metadata', False))
+        if self.use_metadata:
             # assuming metadata vector is length 8 (sex, age, 6‐hot site)
             meta_dim = opt['model'].get('meta_input_dim', 8)
 
