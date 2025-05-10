@@ -427,7 +427,7 @@ def build_metadata(df, sex_map, site_map):
     plus precomputed maps sex_map and site_map,
     returns a list of [sex,age,site_onehot…] FloatTensors.
     """
-    num_sites = len(site_map)
+    num_sites = 6
     metas = []
     for _, row in df.iterrows():
         s = sex_map[row.sex]
