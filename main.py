@@ -428,16 +428,14 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
 
     with torch.no_grad():
         for images, labels in loop:
-            if isinstance(images, (list,tuple)):
-                images = images[0]
             if bool(melanomamodel.opt['model'].get('use_metadata', False)):
-                img, meta = images
+                img, meta = images           # images is (img_tensor, meta_tensor)
                 img  = img.to(device)
                 meta = meta.to(device)
-                images = (img, meta) 
+                images = (img, meta)
             else:
-                # If images is a tuple/list, drop the second element
-                img = images if not isinstance(images, (list, tuple)) else images[0]
+                # images may be a tuple (img,meta) or a single Tensor
+                img = images[0] if isinstance(images, (list,tuple)) else images
                 images = img.to(device)
             labels = labels.to(device)
             outputs = melanomamodel.model(images)
