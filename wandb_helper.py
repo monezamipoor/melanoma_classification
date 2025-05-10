@@ -36,7 +36,7 @@ def wandb_login(opt):
             wandb.define_metric("*", step_metric="epoch")
             returnbool = True  # Successful configuration
     except Exception as e:
-        print("Failed to configure wandb")
+        print("Wandb disabled")
         wandb.init(mode="disabled")            # prevent logging
 
     return returnbool

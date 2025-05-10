@@ -42,9 +42,6 @@ from copy import deepcopy
 # Contrastive logic moved to contrastive_svm module
 from contrastive_svm import ContrastiveSVM
 
-#Uncomment to turn off wandb entirely for debugging only
-#wandb.init(mode="disabled")
-
 # Builds a object that holds all the model, optimiser, dataloaders etc for a Test run
 class MelanomaTest:
     def __init__(self, opt, testmodel):
@@ -471,7 +468,6 @@ def argument_parser():
     parser.add_argument("-o", "--opt", type=str, default="default.yml", help="the option file")
     parser.add_argument("-s", "--savedmodel", type=str, required=False, help="the model file to test", nargs='+')
     parser.add_argument("-t", "--testcsv", type=str, required=False, help="the csv file to test")
-    parser.add_argument("-wandb", action="store_true", help="Enable Wandb logging")
     args = parser.parse_args()
 
     if not os.path.isabs(args.opt) and not args.opt.startswith('./'):
@@ -501,14 +497,9 @@ def set_seed(seed):
 # Calls training or test loops as appropriate.
 def main():
     set_seed(42)
-    opt = argument_parser()
+    opt =  argument_parser()
     testmodels = opt['dataset']['savedmodel']   # testmodels is a list of saved model paths. Multiple models (e.g. k-fold) will trigger prediction voting in test
 
-    if opt['enable_wandb']:
-        wandb.init(project="melanoma_project")
-    else:
-        os.environ["WANDB_MODE"] = "disabled"
-    
     # Check to see if we should train first
     if testmodels is None or len(testmodels) == 0:           # Train because we don't have a model to test against
         print("TRAIN MODEL MODE")
