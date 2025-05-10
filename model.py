@@ -134,7 +134,7 @@ class MelanomaModel(nn.Module):
         for param in module.parameters():
             param.requires_grad = trainable
 
-    def forward(self, x, return_features=False, return_projection=False):
+    def forward(self, x, return_features=False, return_projection=False, return_logits=False):
         if isinstance(x, (list, tuple)):
             x = x[0]
 
@@ -155,6 +155,10 @@ class MelanomaModel(nn.Module):
             pass
         else:
             raise ValueError(f"Unexpected feature shape: {features.shape}")
+            
+        if return_features and return_logits:
+            logits = self.classifier(features).squeeze(-1)
+            return features, logits
         
         if return_features:
             return features
