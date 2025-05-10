@@ -2,7 +2,7 @@ enable_wandb: false
 # Dataset Arguments
 dataset:
   image_size: [224, 224] # Width, Height of input images
-  use_groupkfold: true
+  use_groupkfold: False
   n_splits: 3
   downsampling_rate: 0.1 # Keep X% of class 0
   oversampling_rate: 5 # Leave at 1 to disable
@@ -56,7 +56,7 @@ model:
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "regular"    # "regular", "svm", "contrastive", "svm+contrastive"
   combined_loss: False
-  loss_function: "bce_auto" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
+  loss_function: "bce" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
   second_loss: "triplet"
   triplet_margin: 0.5
   loss_combination_weight: 1
@@ -71,7 +71,7 @@ model:
   contrastive_temperature: 0.07
   contrastive_margin: 0.5
   contrastive_svm_lambda: 0.1
-  use_metadata: True
+  use_metadata: False
   freeze_backbone: false
 
 # Training Arguments
@@ -82,7 +82,7 @@ training:
   decay_rate: 0.1 # For step scheduler
   step_size: 30 # Epochs between decay for step scheduler
   contrastive_epochs: 0
-  epochs: 1
+  epochs: 20
   warmup_epochs: 0
   freeze_pretrained: false # Whether to freeze backbone layers
   mixed_precision: false # Whether to use mixed precision training
