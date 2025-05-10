@@ -397,6 +397,7 @@ def validate(m, val_loader, epoch=1, tag='notag'):
                 # If images is a tuple/list, drop the second element
                 img = images if not isinstance(images, (list, tuple)) else images[0]
                 images = img.to(device)
+            labels = labels.to(device)
             preds = m.model(images)
             probs = torch.sigmoid(preds)
             loss = bce_crit(preds, labels.float())
@@ -438,6 +439,7 @@ def test_outputs(melanomamodel, total_loss, val_loader, description="[Val]"):
                 # If images is a tuple/list, drop the second element
                 img = images if not isinstance(images, (list, tuple)) else images[0]
                 images = img.to(device)
+            labels = labels.to(device)
             outputs = melanomamodel.model(images)
             loss = melanomamodel.criterion(outputs, labels.float())
             total_loss += loss.item()
