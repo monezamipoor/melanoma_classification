@@ -1,5 +1,4 @@
 # Dataset Arguments
-enable_wandb: false
 dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
