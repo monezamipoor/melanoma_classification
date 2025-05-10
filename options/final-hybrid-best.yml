@@ -1,5 +1,4 @@
 # Dataset Arguments
-enable_wandb: false
 dataset:
   image_size: [224, 224] # Width, Height of input images
   use_groupkfold: false
@@ -74,8 +73,4 @@ testing:
   model_save_metrics: ["AUC"]
   model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
   checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
-  wandb:
-    #project_name: 
-    #entity: 
-    #api_key: 
   threshold_value: 0.5 # Set 'auto' for automatically setting threshold, otherwise enter the number
