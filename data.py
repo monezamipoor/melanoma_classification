@@ -320,6 +320,12 @@ def melanoma_train_dataloaders(opt):
     ]
     
     if opt['dataset'].get('use_groupkfold', False):
+        if opt['model']['use_metadata']:
+            sex_map  = {'male': 0, 'female': 1}
+            site_map = {
+                s: i for i, s in
+                enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))
+            }
         fold_loaders = []
         for count, fold_cfg in enumerate(CUSTOM_FOLDS):
             tr_groups, val_groups = fold_cfg['train'], fold_cfg['val']
@@ -332,7 +338,18 @@ def melanoma_train_dataloaders(opt):
     
             val_files   = (dataset.loc[val_mask, 'image_name'] + '.jpg').values
             val_classes =  dataset.loc[val_mask, 'target'].values
-    
+
+            # ── Build metadata for this fold ──
+            if opt['model']['use_metadata']:
+                train_df = dataset.loc[train_mask].reset_index(drop=True)
+                val_df   = dataset.loc[val_mask].reset_index(drop=True)
+
+                train_meta = utils.build_metadata(train_df, sex_map, site_map)
+                val_meta   = utils.build_metadata(val_df,   sex_map, site_map)
+            else:
+                train_meta = [None] * len(train_files)
+                val_meta   = [None] * len(val_files)
+
             # ─────── oversampling / down‑sampling exactly as before ───────
             if opt['dataset'].get('downsampling_rate', 1.0) < 1.0:
                 train_files, train_classes = down_sampling(
@@ -349,9 +366,11 @@ def melanoma_train_dataloaders(opt):
             train_ds = MelanomaDataset(opt, 'train',
                                        opt['dataset']['dataset_train_path'],
                                        train_files, train_classes)
+            train_ds.metadata = train_meta
             val_ds   = MelanomaDataset(opt, 'val',
                                        opt['dataset']['dataset_val_path'],
                                        val_files, val_classes)
+            val_ds.metadata = val_meta
     
             # ─────── DataLoaders (with optional stratified sampler) ───────
             if opt['dataset'].get('use_stratified_sampler', False):
