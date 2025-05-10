@@ -16,20 +16,20 @@ from pytorch_grad_cam import (
 from pytorch_grad_cam.utils.model_targets import ClassifierOutputTarget
 from pytorch_grad_cam.utils.image import show_cam_on_image
 
+model_name="efficientnet_b0"
+model_path="checkpoints/2025-04-26_19-51-29-NF_E1-default-jc_AUC.pth"
+image_path= "/content/Melanoma/test/ISIC_0509538.jpg"
+
 # 1) Device
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # 2) Build a single-logit EfficientNet-B0
-model = models.efficientnet_b0(pretrained=False)
+model = models.model_name(pretrained=False)
 in_feats = model.classifier[1].in_features
 model.classifier[1] = torch.nn.Linear(in_feats, 1)   # binary head
 
 # 3) Load & unwrap checkpoint
-raw = torch.load(
-    "/content/melanoma_classification/logs/default-jc-2025-04-26_19-48-45/"
-    "checkpoints/2025-04-26_19-51-29-NF_E1-default-jc_AUC.pth",
-    map_location="cpu"
-)
+raw = torch.load(model_path, map_location="cpu")
 
 # 4) Clean up the loaded state dict so its keys match torchvision’s naming
 cleaned_state_dict = OrderedDict()
@@ -52,8 +52,8 @@ for original_key, weight_tensor in sd.items():
 
 # 5) Load into model
 missing, unexpected = model.load_state_dict(new_sd, strict=False)
-print("➖ missing keys:", missing)
-print("➕ unexpected keys:", unexpected)
+print("missing keys:", missing)
+print("unexpected keys:", unexpected)
 
 model.to(device).eval()
 
@@ -102,8 +102,4 @@ def apply_all_cams_with_finer(image_path, model, transform):
     plt.show()
 
 # 8) Example usage
-apply_all_cams_with_finer(
-    "/content/Melanoma/test/ISIC_0509538.jpg",
-    model,
-    transform
-)
+apply_all_cams_with_finer(image_path, model, transform)
