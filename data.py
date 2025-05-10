@@ -7,7 +7,6 @@ import time
 
 import torchvision.transforms.functional as F
 from sklearn.model_selection import GroupKFold, train_test_split
-
 from PIL import Image
 import numpy as np
 import pandas as pd
@@ -18,7 +17,6 @@ try:
     from torchvision.transforms import ElasticTransform
 except ImportError:
     ElasticTransform = None 
-
 
 import utils
 
@@ -394,28 +392,15 @@ def melanoma_train_dataloaders(opt):
         # Simple split by tfrecord: groups 0-9 for training, 10-11 for validation
         train_df = dataset[dataset['tfrecord'].isin(range(0, 10))]
         val_df = dataset[dataset['tfrecord'].isin([10, 11])]
+
         if opt['model']['use_metadata']:
-            # 3) Build metadata tensors
-            sex_map  = {'male':0, 'female':1}
-            site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+            # dropna as before…
+            sex_map  = {'male':0,'female':1}
+            site_map = {s:i for i,s in 
+                        enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
 
-            train_meta = [
-                torch.tensor([
-                    sex_map[row.sex],
-                    float(row.age_approx),
-                    float(site_map[row.anatom_site_general_challenge])
-                ], dtype=torch.float32)
-                for _, row in train_df.iterrows()
-            ]
-
-            val_meta = [
-                torch.tensor([
-                    sex_map[row.sex],
-                    float(row.age_approx),
-                    float(site_map[row.anatom_site_general_challenge])
-                ], dtype=torch.float32)
-                for _, row in val_df.iterrows()
-            ]
+            train_meta = utils.build_metadata(train_df, sex_map, site_map)
+            val_meta   = utils.build_metadata(val_df,   sex_map, site_map)
         else:
             train_meta = [None] * len(train_df)
             val_meta   = [None] * len(val_df)
@@ -476,17 +461,11 @@ def melanoma_test_dataloaders(opt):
         dataset = dataset[dataset['sex'].str.strip()!='']
         dataset = dataset[dataset['anatom_site_general_challenge'].str.strip()!='']
     if opt['model']['use_metadata']:
-        # 3) Build metadata tensors
-        sex_map  = {'male':0, 'female':1}
-        site_map = {s:i for i,s in enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
-        meta_test = [
-            torch.tensor([
-                sex_map[row.sex],
-                float(row.age_approx),
-                float(site_map[row.anatom_site_general_challenge])
-            ], dtype=torch.float32)
-            for _, row in dataset.iterrows()
-        ]
+        sex_map  = {'male':0,'female':1}
+        site_map = {s:i for i,s in 
+                    enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))}
+
+        meta_test = utils.build_metadata(dataset, sex_map, site_map)
     else:
         meta_test = [None] * len(dataset)
 
