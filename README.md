@@ -7,6 +7,9 @@ Two notebooks are provided:
 - <NOTEBOOK 1 LINK> - A self-contained set of examples for running training and test.
 - <NOTEBOOK 2 LINK> - Covers explainability tests 
 
+NOTE - WHEN WE PUT THESE LINKS IN MAKE SURE IT CAN BE ACCESSED AS A DIRECT COLAB LINK TO GITHUB. I.E.
+'https://colab.research.google.com/github/monezamipoor/melanoma_classification/blob/main/<NOTEBOOK 1>.ipynb'
+
 Both notebooks can be executed on free-tier [Google Colab](https://colab.research.google.com/) with a T4 GPU. The notebooks are designed to:
 1. Automatically clone this git repo for execution
 2. Install requirements.txt dependancies
