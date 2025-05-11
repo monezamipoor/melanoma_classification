@@ -34,7 +34,10 @@ All executions require a named YML file, residing in the /options folder. Suppli
 ## YAML Examples
 | File | Purpose |
 | ----------- | ----------- |
-| | |
+| final-hybrid-control-test.yml | CNN only test as a baseline for hybrid tests (same config) |
+| final-hybrid-best.yml | Hybrid model test |
+|  |  |
+|  |  |
 
 # Python Files and Architecture
 ![](https://github.com/monezamipoor/melanoma_classification/blob/main/ml-coursework.png?raw=true)
