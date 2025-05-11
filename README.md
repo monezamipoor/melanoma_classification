@@ -43,7 +43,7 @@ All executions require a named YML file, residing in the /options folder. Suppli
 |  |  |
 
 ## YAML Config Options
-Most config is balanced and tailored for the test it is designed to execute, as such changing individual variables may have adverse effects. It is recommended to use the named YMLs for the types of test they run (e.g. hybrid or focal loss). However there are a number of general parameters that might be of use to change to affect the pace or outcome of all tests in the provided YMLs:
+Most config is balanced and tailored for the test it is designed to execute. It is recommended to use the named YMLs for the types of test they run (e.g. hybrid or focal loss). However there are a number of general parameters that might be of use to change to affect the pace or outcome of all tests in the provided YMLs:
 
 | What? | Where? | Type |
 | ----------- | ----------- | ----------- |
