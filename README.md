@@ -15,7 +15,7 @@ Both notebooks can be executed on free-tier [Google Colab](https://colab.researc
 
 # Execution Notes
 - All executions of training contain validation and test loops.
-- Results are logged to a new directory named <YML>-<DATE>. Path to this directory is defined in each YML file.
+- Results are logged to a new directory named `<YML>-<DATE>`. Path to this directory is defined in each YML file.
 - Within the log directory:
 ```
 log_test_balanced.csv - Metric outputs for the balanced test data set (1:1 class ratio)
@@ -31,7 +31,7 @@ confusion_matrix_xxxxxxxx.png - Confusion matrices for balanced/natural tests
 
 All executions require a named YML file, residing in the /options folder. Supplied with -o at the command line.
 
-## YAML Examples And Parameter Choices
+## YAML Examples
 | File | Purpose |
 | ----------- | ----------- |
 | | |
