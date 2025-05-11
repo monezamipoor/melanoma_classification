@@ -42,6 +42,17 @@ All executions require a named YML file, residing in the /options folder. Suppli
 |  |  |
 |  |  |
 
+## YAML Config Options
+Most config is balanced and tailored for the test it is designed to execute, as such changing individual variables may have adverse effects. It is recommended to use the named YMLs for the types of test they run (e.g. hybrid or focal loss). However there are a number of general parameters that might be of use to change to affect the pace or outcome of all tests:
+| What? | Where? | Type |
+| ----------- | ----------- |
+| Control # epochs | training: epochs: | int |
+| General LR | training: learning_rate: | float |
+| Batch Size | dataset: batch_size: | int |
+| Augmentations | dataset: augmentations: (various) | N/A |
+| Log directory | testing: log_dir: | string |
+| Enable folding/CV | dataset: use_groupfold: | bool |
+
 # Python Files and Architecture
 ![](https://github.com/monezamipoor/melanoma_classification/blob/main/ml-coursework.png?raw=true)
 
