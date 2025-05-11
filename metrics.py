@@ -84,13 +84,13 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
             threshold_value = float(threshold_value)
             opt['testing']['threshold_value'] = threshold_value
             print(
-                f"Auto-searched & stored best threshold: {threshold_value:.4f} "
+                f"Auto-searched & stored best threshold on evaluation dataset: {threshold_value:.4f} "
                 f"(P:{best_precision:.4f}, R:{best_recall:.4f}, F1:{best_f1:.4f})"
             )
         else:
             # all other epochs: threshold is 0.5
             threshold_value = 0.5
-            print(f"Using default 0.5 threshold (epoch {epoch})")
+            print(f"Using default 0.5 threshold (epoch {epoch}), tag: {tag}")
     else:
         # once saved, we just re-use it everywhere
         print(f"Using configured threshold: {threshold_value}")
