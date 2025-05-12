@@ -2,7 +2,7 @@
 This git repository hold the codebase and example notebooks designed to be run in Google Colab for a deep learning melanoma classifcation system.
 
 # Quick Start
-Two notebooks are provided:
+One notebook is provided for all tests:
 
 - https://github.com/monezamipoor/melanoma_classification/blob/main/run_me.ipynb - A self-contained set of examples for running training and test. Covers explainability tests 
 
