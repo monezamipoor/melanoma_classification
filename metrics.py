@@ -147,7 +147,7 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
             wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
 
     # Log the confusion matrix and ROCAUC for the Test epoch only
-    if tag is not None:
+    if tag is not None and epoch == 'Test':
         # Plot and log the Confusion Matrix
         visualize_confusion_matrix(confusion_matrix(target_int.numpy(), preds_binary.numpy()), classlabels, "Confusion Matrix - Test: " + tag, tag)
 
