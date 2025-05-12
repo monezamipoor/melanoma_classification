@@ -10,7 +10,7 @@ Two notebooks are provided:
 NOTE - WHEN WE PUT THESE LINKS IN MAKE SURE IT CAN BE ACCESSED AS A DIRECT COLAB LINK TO GITHUB. I.E.
 'https://colab.research.google.com/github/monezamipoor/melanoma_classification/blob/main/<NOTEBOOK 1>.ipynb'
 
-Both notebooks can be executed on free-tier [Google Colab](https://colab.research.google.com/) with a T4 GPU. The notebooks are designed to:
+Both notebooks can be executed on free-tier [Google Colab](https://colab.research.google.com/) with a T4 GPU. The notebook is designed to:
 1. Automatically clone this git repo for execution
 2. Install requirements.txt dependancies
 3. Download and unzip the melanoma training set from a google drive location (no login required)
@@ -35,12 +35,22 @@ confusion_matrix_xxxxxxxx.png - Confusion matrices for balanced/natural tests
 All executions require a named YML file, residing in the /options folder. Supplied with -o at the command line.
 
 ## YAML Examples
-| File | Purpose |
+
+All contained within /options. The notebook contains all these as executable examples.
+
+| YML File | Purpose / Major changes|
 | ----------- | ----------- |
-| final-hybrid-control-test.yml | CNN only test as a baseline for hybrid tests (same config) |
-| final-hybrid-best.yml | Hybrid model test |
-|  |  |
-|  |  |
+| 1-Base | Pretrained Effnetb0, bce no loss weighting, adam + cosine, LR 0.0001, BS 32 |
+| 2-Hyperparameters | adamw + LR 0.001 |
+| 3-Sampling | downsampling to 10% class 0, oversampling 500% class 1 |
+| 4-Augmentations | Augmentations adjustments to vflip, jitter |
+| 5-Loss | BCE + Triplet loss example |
+| 6-Model | Resnet50 example |
+| 7-Kfold | Folding with comfig files 1-5 optimisations |
+| 8-a-Hybrid | CNN only test as a baseline for hybrid test 8-b (same HPs, no transformers) |
+| 8-b-Hybrid | Hybrid model test. 128 dims, 4 heads, 2 layers |
+| 9-Metadata | Test with patient site, age and gender metadata |
+| 10-Contrastive | Contrastive loss example |
 
 ## YAML Config Options
 Most config is balanced and tailored for the test it is designed to execute. It is recommended to use the named YMLs for the types of test they run (e.g. hybrid or focal loss). However there are a number of general parameters that might be of use to change to affect the pace or outcome of all tests in the provided YMLs:
