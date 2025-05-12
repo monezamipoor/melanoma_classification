@@ -1,3 +1,10 @@
+"""
+Define a set of utility functions for the training and evaluation of models.
+All functions are called when the other modules call them.
+
+"""
+
+
 import shutil
 import time
 from datetime import datetime
@@ -16,6 +23,7 @@ rundir = None
 # Determine cuda and use this as a way to configure any device params
 # opt is passed but not currently used
 def cuda_available(opt):
+    """Check if CUDA is available and set the device accordingly."""
     # GPU operations have a separate seed we also want to set
     if torch.cuda.is_available():
         torch.cuda.manual_seed(42)
@@ -35,6 +43,7 @@ def cuda_available(opt):
 def check_nested_key(data, keys):
     """Check if a nested key exists in a YAML dictionary."""
     for key in keys:
+        # Check if the current key exists in the data
         if isinstance(data, dict) and key in data:
             data = data[key]
         else:
@@ -43,6 +52,10 @@ def check_nested_key(data, keys):
 
 # create the run directory
 def run_dir(opt=None):
+    """
+    Create a run directory for saving logs and checkpoints. 
+    
+    """
     global rundir
     if rundir is not None:
         return rundir
@@ -64,6 +77,10 @@ def run_dir(opt=None):
     return rundir
 
 def get_log_filename(opt):
+    """
+    Get the log filename for the current run. If it doesn't exist, create it.
+    
+    """
     # If the log filename hasn't been set yet, compute and store it in opt
     if "log_filename" not in opt:
         log_dir = run_dir(opt)
@@ -71,6 +88,10 @@ def get_log_filename(opt):
     return opt["log_filename"]
 
 def log_model(opt, model):
+    """
+    Log the model architecture and parameters to a CSV file.
+    
+    """
 
     layers = []
     for name, param in model.named_parameters():
@@ -84,8 +105,11 @@ def log_model(opt, model):
     df = pd.DataFrame(layers)
     df.to_csv(fileout, index=False)
 
-#TODO: Not-critical bug with k-fold that EPOCH is not reset between folds.
 def log_results(opt, metrics, phase='val', tag='notag'):
+    """
+    Log the results of the current epoch to a CSV file.
+    
+    """
     # Get (or compute) the log filename once
     log_dir = run_dir(opt)
     log_filename = os.path.join(log_dir, f"log_{phase}_{tag}.csv")   # <== DIFFERENT FILE PER TAG
@@ -100,12 +124,15 @@ def log_results(opt, metrics, phase='val', tag='notag'):
     with open(log_filename, 'a') as f:
         f.write(",".join([str(v) for v in metrics.values()]) + "\n")
 
-
 def log_test(opt, metrics, tag='notag'):
     log_results(opt, metrics, phase='test', tag=tag)
 
 
 def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
+    """
+    Save the model checkpoint based on the specified strategy.
+    
+    """
     # utils.py
     if not metrics:
         # If metrics is empty, we are in contrastive phase -> SKIP checkpoint saving
@@ -183,6 +210,10 @@ def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
 
 
 def get_checkpoint_dir(opt):
+    """
+    Get the checkpoint directory for saving model checkpoints.
+    
+    """
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     logdir = run_dir(opt)
     checkpoint_dir = opt['testing']['checkpoint_dir']
@@ -192,6 +223,10 @@ def get_checkpoint_dir(opt):
 
 
 def check_dataset_balance(dataset, label_name='Label'):
+    """
+    Check the distribution of labels in the dataset and print the counts.
+    
+    """
     from collections import Counter
     labels = [int(label) for _, label in dataset]
     count = Counter(labels)
@@ -204,6 +239,10 @@ def check_dataset_balance(dataset, label_name='Label'):
 
 
 def check_prediction_distribution(model, dataloader, device='cuda'):
+    """
+    Check the distribution of predictions from the model on a given dataloader.
+    
+    """
     model.eval()
     all_preds = []
     all_targets = []
@@ -254,7 +293,6 @@ def soft_voting_probs_from_logits(ensemble_logits):
     avg_probs = probs.mean(dim=0)
     return avg_probs
 
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
 
     # Ensure the save directory exists
