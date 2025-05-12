@@ -15,4 +15,3 @@ PyYAML
 sentry-sdk
 grad-cam
 gdown
-zipfile
