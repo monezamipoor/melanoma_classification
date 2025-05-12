@@ -4,13 +4,9 @@ This git repository hold the codebase and example notebooks designed to be run i
 # Quick Start
 Two notebooks are provided:
 
-- <NOTEBOOK 1 LINK> - A self-contained set of examples for running training and test.
-- <NOTEBOOK 2 LINK> - Covers explainability tests 
+- https://github.com/monezamipoor/melanoma_classification/blob/main/run_me.ipynb - A self-contained set of examples for running training and test. Covers explainability tests 
 
-NOTE - WHEN WE PUT THESE LINKS IN MAKE SURE IT CAN BE ACCESSED AS A DIRECT COLAB LINK TO GITHUB. I.E.
-'https://colab.research.google.com/github/monezamipoor/melanoma_classification/blob/main/<NOTEBOOK 1>.ipynb'
-
-Both notebooks can be executed on free-tier [Google Colab](https://colab.research.google.com/) with a T4 GPU. The notebook is designed to:
+Both notebooks can be executed on free-tier using this link: [Google Colab - Notebook Link](https://colab.research.google.com/github/monezamipoor/melanoma_classification/blob/main/run_me.ipynb) with a T4 GPU. The notebook is designed to:
 1. Automatically clone this git repo for execution
 2. Install requirements.txt dependancies
 3. Download and unzip the melanoma training set from a google drive location (no login required)
