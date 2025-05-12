@@ -78,7 +78,7 @@ testing:
   log_dir: "./logs"   # YAML-TIMESTAMP gets created under here
   model_save_strategy: "best" # Options: all, best, last, none
   model_save_metrics: ["AUC"]
-  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall", "cm"]
+  model_metrics: ["AUC","Accuracy","F1", "Precision", "Recall"]
   checkpoint_dir: "./checkpoints"   # creates this as a sub-dir under each run
   early_stopping:
     patience: 10
