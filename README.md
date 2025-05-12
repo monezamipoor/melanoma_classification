@@ -12,6 +12,8 @@ Both notebooks can be executed on free-tier using this link: [Google Colab - Not
 3. Download and unzip the melanoma training set from a google drive location (no login required)
 4. List a set or pre-configured tests that can be executed independently
 
+Note that the image set that is downloaded can be found as a zip [here](https://drive.google.com/file/d/1tcXcfGPwVjzPccKHVec-AcXIibwpddUV/view?usp=drive_link) and is unzipped to the /data directory. Although this should not be required should the notebook be being executed in colab.
+
 # Execution Notes
 - All executions of training contain validation and test loops.
 - Results are logged to a new directory named `<YML>-<DATE>`. Path to this directory is defined in each YML file.
