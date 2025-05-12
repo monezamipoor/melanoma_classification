@@ -105,7 +105,6 @@ def log_model(opt, model):
     df = pd.DataFrame(layers)
     df.to_csv(fileout, index=False)
 
-
 def log_results(opt, metrics, phase='val', tag='notag'):
     """
     Log the results of the current epoch to a CSV file.
@@ -124,7 +123,6 @@ def log_results(opt, metrics, phase='val', tag='notag'):
     # Append metrics for the current epoch
     with open(log_filename, 'a') as f:
         f.write(",".join([str(v) for v in metrics.values()]) + "\n")
-
 
 def log_test(opt, metrics, tag='notag'):
     log_results(opt, metrics, phase='test', tag=tag)

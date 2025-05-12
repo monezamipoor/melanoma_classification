@@ -1,3 +1,8 @@
+'''
+model_hybrid.py - Contains the model instantiation and forward pass code for a CNN / Transformer hybrid model
+Overrides the base MelanomaModel for these and instantiated from main.py
+'''
+
 import argparse
 import os
 
@@ -11,6 +16,7 @@ from model import MelanomaModel
 from utils import log_model
 
 # CNN as a feature extractor >> Transformer with MH attention >> Binary Classifier
+# Model creation
 class HybridModel(MelanomaModel):
     def __init__(self, opt):
         super(HybridModel, self).__init__(opt)
@@ -68,6 +74,7 @@ class HybridModel(MelanomaModel):
         if self.freeze_backbone:
             self.freeze_layers()
 
+    # Freezes n layers in the CNN model if set when model is instantiated.
     def freeze_layers(self):
         for param in self.backbone.parameters():
             param.requires_grad = False
@@ -82,6 +89,7 @@ class HybridModel(MelanomaModel):
         else:
             print("Only transformer and classifier head remains trainable.")
 
+    # Forward pass
     def forward(self, batchin):
         feats = self.backbone(batchin)[-1]  # Run the CNN head to produce feature maps from final layer - SHAPE = [B, C, H, W]
         proj = self.projection(feats)  # Run the linear conversion of features to embedding by batch - SHAPE = [B, embed_dim, H, W]
@@ -112,12 +120,13 @@ def test_hybrid_model(opt, testmodel):
         model.load_state_dict(torch.load(testmodel))
 
     return model
+
 # For train/val loops from main.py
 def train_hybrid_model(opt):
     model = HybridModel(opt)
     return model
 
-# TEST HARNESS ONLY
+# TEST HARNESS ONLY - Pushes dummy data through model to test it.
 if __name__ == '__main__':
 
     # Stand-alone arguements parser

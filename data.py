@@ -430,16 +430,16 @@ def melanoma_train_dataloaders(opt):
                 enumerate(sorted(dataset['anatom_site_general_challenge'].unique()))
             }
         fold_loaders = []
+
         # Create a GroupKFold object with the number of splits
         for count, fold_cfg in enumerate(CUSTOM_FOLDS):
             tr_groups, val_groups = fold_cfg['train'], fold_cfg['val']
-    
+        
             # Indices for train and validation groups
-            # Note: This is a custom split based on the tfrecord groups
+            # Note: This is a custom split based on the tfrecord groups    
             train_mask = dataset['tfrecord'].isin(tr_groups)
             val_mask   = dataset['tfrecord'].isin(val_groups)
-            
-            # specify the train files and classes from the dataset
+            # specify the train files and classes from the dataset    
             train_files   = (dataset.loc[train_mask, 'image_name'] + '.jpg').tolist()
             train_classes =  dataset.loc[train_mask, 'target'].values
     
@@ -466,7 +466,7 @@ def melanoma_train_dataloaders(opt):
                     train_files, train_classes,
                     opt['dataset']['downsampling_rate']
                 )
-                
+              
             # Note: oversampling_rate should be > 1.0
             if opt['dataset'].get('oversampling_rate', 1.0) > 1.0:
                 train_files, train_classes = up_sampling(
@@ -536,6 +536,7 @@ def melanoma_train_dataloaders(opt):
         else:
             train_meta = [None] * len(train_df)
             val_meta   = [None] * len(val_df)
+
 
         # ── Specify train/val files and classes ──
         train_files = (train_df['image_name'] + '.jpg').tolist()
@@ -617,7 +618,7 @@ def melanoma_test_dataloaders(opt):
         meta_test = utils.build_metadata(dataset, sex_map, site_map)
     else:
         meta_test = [None] * len(dataset)
-    
+
     files = dataset['image_name'].values + '.jpg'       # Images need .jpg to be found
 
     # Check the dataset for missing labels
@@ -642,7 +643,7 @@ def melanoma_test_dataloaders(opt):
         opt['dataset']['dataset_test_path'], files, classes
     )
     test_dataset.metadata = meta_test
-    
+
     # ── DataLoader ──
     test_loader = DataLoader(
         test_dataset,

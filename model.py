@@ -109,7 +109,29 @@ class MelanomaModel(nn.Module):
             # If the model has no classifier, we need to raise an error.
             else:
                 raise ValueError("Unsupported backbone structure: no classifier head found.")
+        
+        # ——— metadata branch ———
+        self.use_metadata = bool(opt['model'].get('use_metadata', False))
+        if self.use_metadata:
+            # assuming metadata vector is length 8 (sex, age, 6‐hot site)
+            meta_dim = opt['model'].get('meta_input_dim', 8)
 
+            # build the 2‐layer MLP: meta_dim → 512 → feature_dim
+            self.meta_mlp = nn.Sequential(
+                nn.Linear(meta_dim, 512),
+                nn.LayerNorm(512),
+                nn.SiLU(),            # Swish
+                nn.Dropout(0.3),
+                nn.Linear(512, feature_dim),
+                nn.LayerNorm(feature_dim),
+                nn.SiLU()
+            )
+
+            # override classifier to accept concatenated [img_feat; meta_feat]
+            self.classifier = nn.Sequential(
+                nn.Dropout(dropout_rate),
+                nn.Linear(feature_dim * 2, opt['model']['output_neurons'])
+            )
 
         if self.use_contrastive_head:
             # If the model is using a contrastive head, we need to add a projection head.
@@ -193,12 +215,15 @@ class MelanomaModel(nn.Module):
             # If the module is a Sequential model, we need to set the requires_grad attribute of its parameters.
             param.requires_grad = trainable
 
-    def forward(self, x, return_features=False, return_projection=False):
+    def forward(self, x, return_features=False, return_projection=False, return_logits=False):
         # Forward pass through the model.
         # The input x can be a batch of images or a list of images.
         if isinstance(x, (list, tuple)):
-            x = x[0]
-
+            img = x[0]
+            if self.use_metadata:
+                meta = x[1]
+        else:
+            img = x
         if hasattr(self.backbone, 'forward_features'):
             # If the model has a forward_features method, we need to use it to extract the features.
             features = self.backbone.forward_features(x)
@@ -221,6 +246,15 @@ class MelanomaModel(nn.Module):
             pass
         else:
             raise ValueError(f"Unexpected feature shape: {features.shape}")
+        
+        if self.use_metadata:
+            # meta is [B × meta_dim]
+            meta_feat = self.meta_mlp(meta)    # ⇒ [B × feature_dim]
+            features = torch.cat([features, meta_feat], dim=1)
+            
+        if return_features and return_logits:
+            logits = self.classifier(features).squeeze(-1)
+            return features, logits
         
         if return_features:
             # If the return_features option is set to True, we need to return the features.

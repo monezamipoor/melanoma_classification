@@ -172,7 +172,6 @@ class CombinedLoss(nn.Module):
     
     """
     def __init__(self, opt):
-        # Initialize the Combined Loss
         super().__init__()
         # Get the loss combination weight from the config
         self.weight = opt['model'].get('loss_combination_weight', 1.0)
@@ -305,6 +304,7 @@ def _make_loss(name, opt, loader=None):
 
         print("Using Auto-weighted BCE")
         print(f"  Num pos {num_pos}, neg {num_neg}, ratio {num_neg/num_pos:.3f}")
+
         # return the BCE loss with the specified parameters
         return nn.BCEWithLogitsLoss(pos_weight=pos_weight)
 

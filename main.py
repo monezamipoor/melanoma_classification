@@ -61,7 +61,6 @@ class MelanomaTest:
         else:
             # if the hybrid model is not enabled, use the standard model                                                 
             self.model = test_melanoma_model(opt, testmodel).to(self.device)
-
         # instantiate the model with the saved model path 
         self.model_path = testmodel 
         # Set the loss function based on YML config. 
@@ -111,7 +110,6 @@ class MelanomaTrainer:
         else:
             # if the hybrid model is not enabled, use the standard model
             self.model = train_melanoma_model(opt).to(self.device)
-
         # Define the loss function based on YML config. Uses loss.py helper methods.
         loss_fn = opt['model'].get('loss_function', 'bce').lower()
         if loss_fn == 'contrastive':
@@ -138,6 +136,7 @@ class MelanomaTrainer:
 
         # if the config indicates to freeze the backbone, set the freeze_backbone_epochs and freeze_backbone
         self.freeze_backbone_epochs = opt['training'].get('freeze_backbone_epochs', 0)
+        
         # if the config indicates to freeze the backbone, set the freeze_backbone
         self.backbone_frozen = opt['training'].get('freeze_backbone', True)
 
@@ -238,6 +237,7 @@ class MelanomaTrainer:
             bce_opt['model']['loss_function'] = 'bce'
             self.criterion_second = melanoma_loss(bce_opt, train_loader).to(self.device)
         else:
+
             # single‐loss-mode
             self.criterion = melanoma_loss(self.opt, train_loader).to(self.device)
 
@@ -366,7 +366,7 @@ def train(melanomamodel):
 
             # calculate the average loss for the current epoch
             avg_loss = total_loss / len(melanomamodel.train_loader)
-            # # Calculates validation metrics for both natural and balanced test sets.
+            # Calculates validation metrics for both natural and balanced test sets.
             val_loss, val_metrics = validate(melanomamodel, melanomamodel.val_loader, epoch, tag='natural')
             val_loss_bal, val_metrics_bal = validate(melanomamodel, melanomamodel.val_loader_balanced, epoch, tag='balanced')
 
@@ -433,6 +433,7 @@ def train_batch(melanomamodel, images, labels, epoch):
         # If images is a tuple/list, drop the second element
         img = images if not isinstance(images, (list, tuple)) else images[0]
         images = img.to(melanomamodel.device)
+
     # Move the labels to the device
     labels = labels.to(melanomamodel.device)
 
@@ -607,7 +608,6 @@ def test(opt, melanoma_model_list, val_loader, tag="notag"):
         with torch.no_grad():
             # Run the test predictions for the current model
             labels, outputs, total_loss = test_outputs(melanoma_test, total_loss, val_loader, description='[Test]')
-        
         # If the list of labels is empty, set the all_labels to the current labels
         if all_labels is None:
             all_labels = labels

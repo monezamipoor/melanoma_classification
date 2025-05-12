@@ -41,16 +41,10 @@ def find_best_threshold(y_true, y_probs):
     # Return the best threshold, precision, recall, and F1 score
     return thresholds[best_idx], precision[best_idx], recall[best_idx], f1[best_idx]
 
-
 def evaluate_metrics(opt, probs, target, epoch, tag=None):
     """
     Evaluate metrics based on the model's predictions and the true labels.
 
-    """
-
-    #debug - Uncomment to show spread of probs in debug
-    #threshold_eval_metrics(probs, target)
-    #end debug
     # Mapping of metric names to their corresponding functions
     valdict = {'auc':'AUC','accuracy':'Accuracy', 'precision':'Precision', 'recall':'Recall', 'f1':'F1 Score', 'ap':'Average Precision', 'map':'mAP'}
     testdict = {'auc':'T_AUC','accuracy':'T_Accuracy', 'precision':'T_Precision', 'recall':'T_Recall', 'f1':'T_F1 Score', 'ap':'T_Average Precision', 'map':'T_mAP'}
@@ -89,6 +83,7 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
                 target.cpu().numpy(), probs.cpu().numpy()
             )
             threshold_value = float(threshold_value)
+
             # save the threshold value in the config
             opt['testing']['threshold_value'] = threshold_value
             print(
