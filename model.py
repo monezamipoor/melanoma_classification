@@ -226,10 +226,10 @@ class MelanomaModel(nn.Module):
             img = x
         if hasattr(self.backbone, 'forward_features'):
             # If the model has a forward_features method, we need to use it to extract the features.
-            features = self.backbone.forward_features(x)
+            features = self.backbone.forward_features(img)
         else:
             # If the model does not have a forward_features method, we need to use the standard forward method.
-            features = self.backbone(x)
+            features = self.backbone(img)
         # If the model has a global pooling layer, we need to apply it to the features.
         if features.ndim == 4 and features.shape[-1] != features.shape[-2]:
             # if the model is swin transformer, we need to permute the features.
