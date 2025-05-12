@@ -405,7 +405,7 @@ def validate(m, val_loader, epoch=1, tag='notag'):
     avg_loss = total_loss / len(val_loader)
     all_outputs = torch.cat(all_outputs, dim=0)
     all_labels = torch.cat(all_labels, dim=0)
-    metrics = evaluate_metrics(m.opt, all_outputs, all_labels, epoch+1)
+    metrics = evaluate_metrics(m.opt, all_outputs, all_labels, epoch+1, tag=tag)
     log_results(m.opt, metrics, phase='val', tag=tag)
 
     return avg_loss, metrics
