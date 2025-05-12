@@ -33,7 +33,7 @@ model:
   dropout_rate: 0.2
   num_unfrozen_layers: 0 #unfreeze layers before the classifier
   mode: "contrastive" # "regular", "svm", "contrastive", "svm+contrastive"
-  combined_loss: True
+  combined_loss: False
   loss_function: "contrastive" # 'bce', 'focal', 'dice', 'svm_hinge', 'contrastive'
   second_loss: "triplet"
   triplet_margin: 0.5
