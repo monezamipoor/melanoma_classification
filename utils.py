@@ -1,3 +1,10 @@
+"""
+Define a set of utility functions for the training and evaluation of models.
+All functions are called when the other modules call them.
+
+"""
+
+
 import shutil
 import time
 from datetime import datetime
@@ -8,6 +15,7 @@ import pandas as pd
 from matplotlib import pyplot as plt
 from numpy.f2py.auxfuncs import throw_error
 import math
+import torch.nn.functional as F
 
 EPOCH= 0
 rundir = None
@@ -15,6 +23,7 @@ rundir = None
 # Determine cuda and use this as a way to configure any device params
 # opt is passed but not currently used
 def cuda_available(opt):
+    """Check if CUDA is available and set the device accordingly."""
     # GPU operations have a separate seed we also want to set
     if torch.cuda.is_available():
         torch.cuda.manual_seed(42)
@@ -34,6 +43,7 @@ def cuda_available(opt):
 def check_nested_key(data, keys):
     """Check if a nested key exists in a YAML dictionary."""
     for key in keys:
+        # Check if the current key exists in the data
         if isinstance(data, dict) and key in data:
             data = data[key]
         else:
@@ -42,6 +52,10 @@ def check_nested_key(data, keys):
 
 # create the run directory
 def run_dir(opt=None):
+    """
+    Create a run directory for saving logs and checkpoints. 
+    
+    """
     global rundir
     if rundir is not None:
         return rundir
@@ -63,6 +77,10 @@ def run_dir(opt=None):
     return rundir
 
 def get_log_filename(opt):
+    """
+    Get the log filename for the current run. If it doesn't exist, create it.
+    
+    """
     # If the log filename hasn't been set yet, compute and store it in opt
     if "log_filename" not in opt:
         log_dir = run_dir(opt)
@@ -70,6 +88,10 @@ def get_log_filename(opt):
     return opt["log_filename"]
 
 def log_model(opt, model):
+    """
+    Log the model architecture and parameters to a CSV file.
+    
+    """
 
     layers = []
     for name, param in model.named_parameters():
@@ -83,44 +105,36 @@ def log_model(opt, model):
     df = pd.DataFrame(layers)
     df.to_csv(fileout, index=False)
 
-#TODO: Not-critical bug with k-fold that EPOCH is not reset between folds. Probably also worth writing a separate log for each fold
-def log_results(opt, metrics):
-    global EPOCH
-    # If epoch is not provided, increment the global EPOCH counter and set it in metrics.
-    if 'epoch' not in metrics or metrics.get('epoch') == 'N/A':
-        EPOCH += 1
-        metrics['epoch'] = EPOCH
 
+def log_results(opt, metrics, phase='val', tag='notag'):
+    """
+    Log the results of the current epoch to a CSV file.
+    
+    """
     # Get (or compute) the log filename once
-    log_filename = get_log_filename(opt)
+    log_dir = run_dir(opt)
+    log_filename = os.path.join(log_dir, f"log_{phase}_{tag}.csv")   # <== DIFFERENT FILE PER TAG
 
     # If the log file doesn't exist yet, write a header
     if not os.path.exists(log_filename):
         with open(log_filename, 'w') as f:
-            header = "Epoch\t" + "\t".join(metrics.keys()) + "\n"
+            header = ",".join(metrics.keys()) + "\n"
             f.write(header)
 
     # Append metrics for the current epoch
     with open(log_filename, 'a') as f:
-        f.write(str(metrics.get('epoch')) + "\t" +
-                "\t".join([str(v) for v in metrics.values()]) + "\n")
+        f.write(",".join([str(v) for v in metrics.values()]) + "\n")
 
-def log_test(opt, metrics, tag="natural"):
-    log_dir = run_dir(opt)
-    log_filename = os.path.join(log_dir, f"log_test_{tag}.txt")   # <== DIFFERENT FILE PER TAG
 
-    if not os.path.exists(log_filename):
-        with open(log_filename, 'w') as f:
-            header = "Test\t" + "\t".join(metrics.keys()) + "\n"
-            f.write(header)
+def log_test(opt, metrics, tag='notag'):
+    log_results(opt, metrics, phase='test', tag=tag)
 
-    with open(log_filename, 'a') as f:
-        f.write('Test' + "\t" +
-                "\t".join([str(v) for v in metrics.values()]) + "\n")
-
-    print(f"Test metrics logged to {log_filename}")
 
 def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
+    """
+    Save the model checkpoint based on the specified strategy.
+    
+    """
     # utils.py
     if not metrics:
         # If metrics is empty, we are in contrastive phase -> SKIP checkpoint saving
@@ -198,6 +212,10 @@ def save_checkpoint(opt, best_metrics, model, epoch, metrics, fold=None):
 
 
 def get_checkpoint_dir(opt):
+    """
+    Get the checkpoint directory for saving model checkpoints.
+    
+    """
     timestamp = datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
     logdir = run_dir(opt)
     checkpoint_dir = opt['testing']['checkpoint_dir']
@@ -207,6 +225,10 @@ def get_checkpoint_dir(opt):
 
 
 def check_dataset_balance(dataset, label_name='Label'):
+    """
+    Check the distribution of labels in the dataset and print the counts.
+    
+    """
     from collections import Counter
     labels = [int(label) for _, label in dataset]
     count = Counter(labels)
@@ -219,6 +241,10 @@ def check_dataset_balance(dataset, label_name='Label'):
 
 
 def check_prediction_distribution(model, dataloader, device='cuda'):
+    """
+    Check the distribution of predictions from the model on a given dataloader.
+    
+    """
     model.eval()
     all_preds = []
     all_targets = []
@@ -269,7 +295,6 @@ def soft_voting_probs_from_logits(ensemble_logits):
     avg_probs = probs.mean(dim=0)
     return avg_probs
 
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
 
     # Ensure the save directory exists
@@ -374,14 +399,20 @@ def save_augmented_samples(loader, num_samples=10, save_dir=None, ncols=10):
         plt.close(fig)
 
 
-    print(f"Kaggle CSV saved to {fileout}")
+    #print(f"Kaggle CSV saved to {fileout}")
 
+# Establish the mean of a tensor of logits. Principally for soft-voting.
+# Input must be [x,y] x = row per model, y = logits to average. E.g. [2,500] would be 2 models with 500 logits each.
+# Note that this also works for single model (x=1) inputs as (y / 1 = y)
 def soft_voting_probs_from_logits(ensemble_logits):
     probs = torch.sigmoid(ensemble_logits)
     avg_probs = probs.mean(dim=0)
+
+    #print(f"[DEBUG] voting input shape: {probs.shape}, mean dim=0 -> divides by: {probs.shape[0]}")
+    #print(f"[DEBUG] voting output shape: {avg_probs.shape}")
+
     return avg_probs
 
-# TODO save_dir needs to be parameterised (Ashkan). Refactor to separate class
 def save_augmented_samples(loader, num_samples=10, save_dir="/content/drive/MyDrive/melanoma_classification/logs/Sample"):
 
     # Ensure the save directory exists
@@ -429,3 +460,24 @@ def denormalize_image(tensor, mean, std):
     for t, m, s in zip(tensor, mean, std):
         t.mul_(s).add_(m)
     return tensor
+
+def build_metadata(df, sex_map, site_map):
+    """
+    Given a DataFrame with columns ['sex','age_approx','anatom_site_general_challenge'],
+    plus precomputed maps sex_map and site_map,
+    returns a list of [sex,age,site_onehot…] FloatTensors.
+    """
+    num_sites = 6
+    metas = []
+    for _, row in df.iterrows():
+        s = sex_map[row.sex]
+        a = float(row.age_approx)
+        idx = site_map[row.anatom_site_general_challenge]
+        onehot = F.one_hot(torch.tensor(idx, dtype=torch.long),
+                            num_classes=num_sites).float()
+        vec = torch.cat([
+            torch.tensor([s, a], dtype=torch.float32),
+            onehot
+        ], dim=0)
+        metas.append(vec)
+    return metas
