@@ -16,12 +16,12 @@ dataset:
     image_mix_prob: 0.3
     aug_save_dir: "/content"
     sample_number: 20
-  dataset_train_path: "/content/Melanoma/train"
+  dataset_train_path: "./data/train"
   dataset_train_csv: "./data/train-0-11.csv"
-  dataset_val_path: "/content/Melanoma/train"
+  dataset_val_path: "./data/train"
   dataset_test_csv: "./data/test-12-14.csv"
   dataset_balanced_test_csv: "./data/test-12-14-balanced.csv"
-  dataset_test_path: "/content/Melanoma/train"
+  dataset_test_path: "./data/train"
 
   batch_size: 32
   subset: 1.0
