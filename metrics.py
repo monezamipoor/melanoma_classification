@@ -1,3 +1,7 @@
+'''
+metrics.py - Calculates evaluation metrics based on targets and either logits, probabilities or predictions
+'''
+
 import os
 import time
 
@@ -23,39 +27,41 @@ from debug import threshold_eval_metrics
 from wandb_helper import wandb_log_cm
 
 
-
+# For automatic detection of probability thresholds when configured
 def find_best_threshold(y_true, y_probs):
+    """
+    Find the best threshold for binary classification using precision-recall curve.
+
+    """
     precision, recall, thresholds = precision_recall_curve(y_true, y_probs)
+    # Calculate F1 score for each threshold
     f1 = 2 * precision * recall / (precision + recall + 1e-8)
+    # Find the threshold with the maximum F1 score
     best_idx = f1.argmax()
+    # Return the best threshold, precision, recall, and F1 score
     return thresholds[best_idx], precision[best_idx], recall[best_idx], f1[best_idx]
 
 
-# WARNING: LOGITS, PROBABILITIES AND PREDICTIONS ARE NOT THE SAME THING.
-# LOGITS: Raw loss
-# PROBS: Sigmoid activated probability from loss, resulting in float between 0 and 1.
-# PREDS: A hard 0 or 1, effectively thresholded PROBS.
-#
-# evaluate_metrics now expects probs, not logits. BUT WHY?
-# ... torchmetrics can use both logits and probs
-# ... ensemble voting of multiple models needs to be done on probabilities (or preds) as so the input from these CANT be logits
-# ... so we go with the lowest common denominator for all of our test choices. Which is probabilities.
-#
-
 def evaluate_metrics(opt, probs, target, epoch, tag=None):
+    """
+    Evaluate metrics based on the model's predictions and the true labels.
+
+    """
 
     #debug - Uncomment to show spread of probs in debug
     #threshold_eval_metrics(probs, target)
     #end debug
-
-
+    # Mapping of metric names to their corresponding functions
     valdict = {'auc':'AUC','accuracy':'Accuracy', 'precision':'Precision', 'recall':'Recall', 'f1':'F1 Score', 'ap':'Average Precision', 'map':'mAP'}
     testdict = {'auc':'T_AUC','accuracy':'T_Accuracy', 'precision':'T_Precision', 'recall':'T_Recall', 'f1':'T_F1 Score', 'ap':'T_Average Precision', 'map':'T_mAP'}
 
+
     # Helps separate results in wandb and log to a separate test log file
     if epoch == 'Test':
+        # test epoch
         rundict = testdict.copy()
     else:
+        # training epoch
         rundict = valdict.copy()
 
     # Check we likely have probabilities rather than logits. Safety check.
@@ -70,15 +76,33 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
 
     results = {}
     classlabels = ["Benign", "Malignant"]
+    # Check if the target is a binary tensor
+    # set the threshold value to 0.5 if not set in config
     threshold_value = opt['testing']['threshold_value']
 
+    # Automatic calculation of thresholds if set in config.
     if threshold_value == 'auto':
-        # Find best threshold based on F1 score
-        threshold_value, best_precision, best_recall, best_f1 = find_best_threshold(target.cpu().numpy(), probs.cpu().numpy())
-        threshold_value = float(threshold_value)
-        print(f"Auto-selected best threshold: {threshold_value:.4f} (Precision: {best_precision:.4f}, Recall: {best_recall:.4f}, F1: {best_f1:.4f})")
+        # — use 0.5 until we hit the final balanced epoch —
+        if tag == 'balanced' and epoch == opt['training']['epochs']:
+            # last balanced epoch: do the real search & store it
+            threshold_value, best_precision, best_recall, best_f1 = find_best_threshold(
+                target.cpu().numpy(), probs.cpu().numpy()
+            )
+            threshold_value = float(threshold_value)
+            # save the threshold value in the config
+            opt['testing']['threshold_value'] = threshold_value
+            print(
+                f"Auto-searched & stored best threshold on evaluation dataset: {threshold_value:.4f} "
+                f"(P:{best_precision:.4f}, R:{best_recall:.4f}, F1:{best_f1:.4f})"
+            )
+        else:
+            # all other epochs: threshold is 0.5
+            threshold_value = 0.5
+            print(f"Using default 0.5 threshold (epoch {epoch}), tag: {tag}")
     else:
+        # once saved, we just re-use it everywhere
         print(f"Using configured threshold: {threshold_value}")
+
     # Convert probabilities to binary predictions using a given threshold.
     print(f"Threshold equals to: {threshold_value}")
     preds_binary = (probs > threshold_value).int()
@@ -89,28 +113,40 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
     def to_scalar(x):
         return x.item() if isinstance(x, torch.Tensor) else x
 
+    # Add the supplied epoch to the metrics collection
+    results['epoch'] = epoch
+
     # Loop over each metric name and compute the corresponding metric.
     for metric in config_metrics:
+        # convert the metric name to lowercase for case-insensitive comparison
         metric_lower = metric.lower()
+        # Check the metric name if it is AUC
         if metric_lower == 'auc':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_auroc(probs, target, thresholds=None)), 4)
+        # Check the metric name if it is Accuracy
         elif metric_lower == 'accuracy':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_accuracy(probs, target, threshold=threshold_value)), 4)
+        # Check the metric name if it is Precision
         elif metric_lower == 'precision':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_precision(probs, target, threshold=threshold_value)), 4)
+        # Check the metric name if it is Recall
         elif metric_lower == 'recall':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_recall(probs, target, threshold=threshold_value)), 4)
+        # Check the metric name if it is F1
         elif metric_lower == 'f1':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_f1_score(probs, target, threshold=threshold_value)), 4)
+        # Check the metric name if it is AP
         elif metric_lower == 'ap':
             results[rundict.get(metric_lower, metric_lower)] = round(to_scalar(binary_average_precision(probs, target)), 4)
+        # Check the metric name if it is mAP
         elif metric_lower == 'map':
             results[rundict.get(metric_lower, metric_lower)] = average_precision_score(target_int.numpy(), probs.numpy())
+        # Check the metric name if it is CM
         elif metric_lower =='cm':
+            # Calculate the confusion matrix
             cm = confusion_matrix(target_int.numpy(), preds_binary.numpy())
-            results[rundict.get(metric_lower, metric_lower) + " - Epoch: " + str(epoch)] = cm
+            results[rundict.get(metric_lower, metric_lower)] = cm
 
-            # TODO break out wandb and local display of CMs. Also save CM as part of logging rather than plot them
             wandb_log_cm(preds_binary.cpu().numpy().flatten().tolist(), target_int.cpu().numpy().flatten().tolist(), classlabels, "Confusion Matrix - Epoch: " + str(epoch))
 
     # Log the confusion matrix and ROCAUC for the Test epoch only
@@ -125,7 +161,12 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
 
     return results
 
+# Writes a plot of a CM to the log directory
 def visualize_confusion_matrix(cm, labels=['Negative', 'Positive'], title='Confusion Matrix', tag=''):
+    """
+    Visualizes a confusion matrix using seaborn and saves it to the log directory.
+    
+    """
     
     plt.figure(figsize=(6, 4))
     sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
@@ -143,8 +184,11 @@ def visualize_confusion_matrix(cm, labels=['Negative', 'Positive'], title='Confu
     plt.savefig(filepth, dpi=300)
     plt.close()
 
-
+# Writes a plot of a ROCAUC to the log directory
 def visualize_roc_curve(fpr, tpr, roc_auc, title='ROC Curve', tag=''):
+    """
+    Visualizes a ROC curve using matplotlib and saves it to the log directory.
+    """
     plt.figure(figsize=(6, 4))
     plt.plot(fpr, tpr, color='darkorange', lw=2,
              label='ROC curve (area = %0.2f)' % roc_auc)
