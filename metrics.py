@@ -45,6 +45,8 @@ def evaluate_metrics(opt, probs, target, epoch, tag=None):
     """
     Evaluate metrics based on the model's predictions and the true labels.
 
+    """
+
     # Mapping of metric names to their corresponding functions
     valdict = {'auc':'AUC','accuracy':'Accuracy', 'precision':'Precision', 'recall':'Recall', 'f1':'F1 Score', 'ap':'Average Precision', 'map':'mAP'}
     testdict = {'auc':'T_AUC','accuracy':'T_Accuracy', 'precision':'T_Precision', 'recall':'T_Recall', 'f1':'T_F1 Score', 'ap':'T_Average Precision', 'map':'T_mAP'}
